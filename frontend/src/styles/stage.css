@@ -1,0 +1,270 @@
+/* The home stage. Only the agent, plus the cards it pulls up when asked.
+   A card can be dragged, sent to the background shelf, brought back, or closed.
+   Designed in the mocks (mocks/assets/stage.css).
+
+   The stage has three layouts, chosen from the size of the window in stage/layout.ts and
+   set as data-layout on .app. "windows" is the one described above. "stacked" and "beside",
+   at the end of this file, show one card at a time where there is less room. */
+
+.stage--home { position: relative; display: block; padding: 0; overflow: hidden; }
+
+/* The agent. It fits itself to the room it is given: the orb takes the height the words
+   leave it, up to its full size, and with little height the words give way first. */
+.home { position: absolute; inset: 0; container: home / size; }
+.home__in { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 0 24px 56px; text-align: center; }
+.home__hello { font: 500 26px/1.2 var(--display); letter-spacing: .01em; }
+.home__orb { flex: 1 1 0; display: grid; place-items: center; width: 100%; min-height: 64px; max-height: min(300px, 36vh, 64cqw); margin: clamp(12px, 6cqh, 34px) 0 clamp(12px, 5.4cqh, 30px); container-type: size; }
+.home__orb .orb { --size: min(100cqw, 100cqh); }
+.home__words { flex: none; display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+.home__state { font: 500 13px/1 var(--display); letter-spacing: .34em; text-indent: .34em; text-transform: uppercase; color: var(--accent); }
+.app[data-state="approval"] .home__state { color: var(--warm); }
+.app[data-state="standby"] .home__state { color: var(--text-2); }
+.home__heard { height: 20px; max-width: min(60ch, 100%); margin-top: 16px; overflow: hidden; font-size: 13px; color: var(--text-3); white-space: nowrap; text-overflow: ellipsis; }
+.home__line { display: -webkit-box; min-height: 52px; max-width: min(46ch, 100%); margin-top: 6px; overflow: hidden; font: 400 17px/1.45 var(--display); letter-spacing: .005em; color: var(--text-2); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.home__line.is-orbit { padding-left: 14px; border-left: 1px solid rgba(var(--accent-rgb), .55); text-align: left; color: var(--text); }
+.home__try { justify-content: center; margin-top: 22px; }
+.home__words > .btn { margin-top: 14px; }
+@container home (max-height: 470px) { .home__hello { display: none; } }
+@container home (max-height: 400px) { .home:not(.home--row) .home__try { display: none; } }
+@container home (max-height: 300px) { .home:not(.home--row) .home__heard { display: none; } }
+@container home (max-height: 280px) { .home:not(.home--row) .home__words:has(> .btn) .home__line { display: none; } }
+@container home (max-height: 210px) { .home:not(.home--row) .home__line { display: none; } }
+button.chip { background: none; cursor: pointer; }
+button.orb { padding: 0; border: 0; background: none; cursor: pointer; }
+button.top__link { cursor: pointer; }
+
+/* Cards */
+.wins { position: absolute; inset: 0; pointer-events: none; }
+.win { position: absolute; max-height: calc(100% - 96px); pointer-events: auto; background: linear-gradient(180deg, rgba(15, 23, 34, .97), rgba(8, 13, 21, .97)); box-shadow: 0 24px 64px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .35); animation: win-in .2s cubic-bezier(.2, .7, .2, 1); transition: opacity .2s, border-color .2s; }
+.win:not(.is-front) { opacity: .86; }
+.win.is-front { border-color: var(--line-2); }
+.win[data-tone="warm"]::before, .win[data-tone="warm"]::after { border-color: var(--warm); }
+.win[data-tone="ok"]::before, .win[data-tone="ok"]::after { border-color: var(--ok); }
+.win__head { gap: 10px; padding: 0 8px 0 12px; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.win__head:active { cursor: grabbing; }
+.win__head .src { width: 24px; height: 24px; }
+.win__head .src .ico { width: 14px; height: 14px; }
+.win__head .panel__title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.win__tools { margin-left: auto; display: flex; gap: 2px; }
+.win__btn { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 3px; color: var(--text-3); }
+.win__btn:hover { color: var(--text); background: var(--fill-2); }
+.win__btn .ico { width: 15px; height: 15px; }
+.win .row:last-child { border-bottom: 0; }
+.win .row--plain { grid-template-columns: minmax(0, 1fr) auto; }
+/* An entry with a link: its title opens it, and a button on the right copies it. */
+.win .row--linked { grid-template-columns: minmax(0, 1fr) auto auto; }
+.win .row--linked .row__title a { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.win .row--linked .row__title a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.row__copy { display: grid; place-items: center; width: 26px; height: 26px; margin: -4px -6px 0 -4px; border-radius: 3px; color: var(--text-3); }
+.row__copy:hover { color: var(--accent); background: var(--fill-2); }
+.row__copy .ico { width: 14px; height: 14px; }
+/* An entry's buttons side by side: show the file here, copy its link. */
+.win .row--tools { grid-template-columns: minmax(0, 1fr) auto auto; }
+.row__tools { display: flex; gap: 2px; margin: -4px -6px 0 -4px; }
+.row__tools .row__copy { margin: 0; }
+.win .panel__foot a.btn { text-decoration: none; }
+/* A list to read through: who and when on one line, then all of what they wrote. */
+.win .row--whole { row-gap: 3px; padding-block: 10px; }
+.win .row--whole > div { display: contents; }
+.win .row--whole .row__meta { grid-area: 1 / 2; }
+.win .row--whole .row__line { grid-area: 2 / 1 / 3 / -1; white-space: pre-line; overflow: visible; overflow-wrap: anywhere; line-height: 1.45; }
+.win .tl { padding-block: 6px; }
+.win .rem { grid-template-columns: 20px minmax(0, 1fr) auto auto; padding-inline: 16px 10px; }
+.win .rem__when { text-align: right; }
+.win textarea.draft__body { min-height: 150px; margin: 8px 0 6px; }
+.win div.draft__body { margin: 8px 0 0; }
+.win__subject { font: 500 17px/1.3 var(--display); letter-spacing: .01em; }
+.win__email { margin-top: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 3px; background: rgba(4, 7, 12, .4); }
+.win__email summary { font: 500 10px/1.6 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); cursor: pointer; }
+.win__email .msg__text { max-height: 200px; margin-top: 8px; overflow: auto; font-size: 13px; color: var(--text-2); }
+.win__turns { display: grid; gap: 16px; }
+.win__turns .turn p { font-size: 13.5px; }
+.win .step__mark { width: 16px; height: 16px; margin-top: 2px; display: grid; place-items: center; border: 1px solid rgba(var(--ok-rgb), .5); border-radius: 50%; color: var(--ok); }
+.win .step__mark .ico { width: 10px; height: 10px; }
+
+/* A file shown as itself: a picture, a PDF, text (cards/FileCard.tsx). A PDF is drawn by
+   the browser's own viewer in a frame, which has no height of its own, so its card takes
+   all the height a card may have and the frame fills it. */
+.win[data-tall] { height: calc(100% - 96px); }
+.win[data-tall] > .panel__body { display: flex; flex-direction: column; overflow: hidden; }
+.file__pdf { flex: 1; width: 100%; min-height: 0; border: 0; }
+/* The squares show through a picture that is see-through, whatever colour it is drawn in. */
+.file__img { display: block; max-width: 100%; height: auto; margin: 0 auto; border-radius: 2px; background: repeating-conic-gradient(#8e9aa6 0 25%, #a7b1bb 0 50%) 0 0 / 16px 16px; }
+.file__text { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file__text[data-mono] { font: 400 12.5px/1.6 var(--mono); }
+.file__note { margin-top: 10px; font-size: 12px; color: var(--text-3); }
+/* A tab of a spreadsheet (cards/SheetCard.tsx), drawn as Sheets draws it. Each column is as
+   wide as what is in it, up to a limit past which its words wrap; a table wider than the card
+   scrolls sideways. The column letters, the headers and the row numbers stay in view. */
+.sheet table { width: max-content; border-collapse: separate; border-spacing: 0; font: 400 12px/1.45 var(--mono); }
+.sheet th, .sheet td { padding: 5px 9px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.sheet__cell { min-width: 2ch; max-width: 280px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sheet thead { position: sticky; top: 0; z-index: 2; }
+.sheet th { background: var(--bg-2); font-weight: 400; color: var(--text-3); white-space: nowrap; }
+.sheet .sheet__letters th { font-weight: 500; text-align: center; }
+.sheet th[scope="row"], .sheet .sheet__corner { position: sticky; left: 0; z-index: 1; min-width: 40px; text-align: right; }
+.sheet .sheet__head td { background: linear-gradient(var(--fill-2), var(--fill-2)) var(--bg-2); font-weight: 500; color: var(--text); }
+/* What a change just did, once it is done. */
+.sheet tr[data-changed] td, .sheet td[data-changed] { background: rgba(var(--ok-rgb), .14); color: var(--text); }
+.sheet tr[data-changed] th { color: var(--ok); }
+.sheet__tabs { display: flex; gap: 6px; padding: 10px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.sheet__tab { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 3px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.sheet__tab:hover { color: var(--text); }
+.sheet__tab[aria-selected="true"] { border-color: rgba(var(--accent-rgb), .6); background: rgba(var(--accent-rgb), .08); color: var(--text); }
+.sheet__note { padding: 8px 14px; font-size: 12px; color: var(--text-3); }
+/* A change to a sheet on its draft: a table of its own, which scrolls sideways if it must. */
+.sheet--draft { margin-top: 14px; overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; }
+.sheet--draft table { min-width: 100%; }
+.sheet--draft thead { position: static; }
+.sheet--draft thead th { font-weight: 500; }
+.sheet--draft tr:last-child td { border-bottom: 0; }
+.sheet--draft th:last-child, .sheet--draft td:last-child { border-right: 0; }
+
+/* A screenshot Orbit took when asked (cards/ScreenshotCard.tsx): a picture of each screen. */
+.shot + .shot { margin-top: 14px; }
+.shot .label { display: block; margin-bottom: 6px; }
+.shot__img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 2px; }
+.shot__of { margin-bottom: 10px; font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* A file that came with an email. One the app can show is a button that opens it. */
+.win__email .attach { margin-right: 8px; }
+button.attach { background: none; cursor: pointer; }
+button.attach:hover { border-color: rgba(var(--accent-rgb), .6); color: var(--text); }
+/* The files a draft carries: each a chip with its name and size. One the app can show
+   opens from its name, and one that can still be taken off has a button for that. */
+.attached { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.attached .attach { min-width: 0; max-width: 100%; margin: 0; }
+.attach__open { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
+.attach__open:hover { color: var(--text); }
+.attach__name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attach .ico { flex: none; }
+.attach small { flex: none; font: 400 10.5px/1 var(--mono); letter-spacing: .02em; color: var(--text-3); }
+.attach__x { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-right: -5px; border-radius: 3px; color: var(--text-3); }
+.attach__x:hover { color: var(--alert); background: var(--fill-2); }
+.attach__x .ico { width: 12px; height: 12px; }
+.win .draft__body + .attached, .win .row__detail + .attached { margin-top: 8px; }
+.draft__attach { margin-top: 8px; }
+/* The button that hands a draft over to Gmail sits apart from the two that answer it. */
+.win .panel__foot { flex-wrap: wrap; }
+.win__aside { margin-left: auto; }
+/* A card that takes files, while some are held over it. */
+.win[data-dropping] { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .5), 0 24px 64px rgba(0, 0, 0, .55); }
+/* The files waiting to be attached (cards/TrayCard.tsx). */
+.tray__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tray__note { padding: 10px 16px 14px; font-size: 12px; }
+/* Shown over the whole app while files from the computer are held over it. */
+.dropzone { position: fixed; inset: 10px; z-index: 5000; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 24px; border: 1.5px dashed rgba(var(--accent-rgb), .7); border-radius: 6px; background: rgba(4, 7, 12, .8); text-align: center; color: var(--text-2); pointer-events: none; }
+.dropzone .ico { width: 28px; height: 28px; color: var(--accent); }
+.dropzone b { font: 500 13px/1.4 var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--text); }
+/* Orbit asking for a file from the user's computer (cards/UploadCard.tsx). */
+.upload__drop { display: grid; justify-items: center; gap: 10px; margin: 14px 0 12px; padding: 22px 16px 18px; border: 1.5px dashed var(--line-2); border-radius: 4px; background: rgba(4, 7, 12, .4); text-align: center; }
+.win[data-dropping] .upload__drop { border-color: var(--accent); }
+.upload__note { font-size: 12px; }
+
+/* The background shelf */
+.shelf { position: absolute; left: 20px; right: 20px; bottom: 14px; display: flex; align-items: center; gap: 12px; min-height: 34px; pointer-events: none; }
+.shelf > * { pointer-events: auto; }
+.shelf[hidden] { display: none; }
+.shelf__label { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.shelf__label .ico { width: 14px; height: 14px; }
+.shelf__items { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.shelf__chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; max-width: 320px; padding: 0 4px 0 10px; overflow: hidden; border: 1px solid var(--line-2); border-radius: 3px; background: rgba(8, 13, 21, .92); font-size: 12.5px; color: var(--text-2); white-space: nowrap; cursor: pointer; animation: win-in .2s cubic-bezier(.2, .7, .2, 1); }
+.shelf__chip:hover { border-color: rgba(var(--accent-rgb), .6); color: var(--text); }
+.shelf__chip > .ico { width: 14px; height: 14px; }
+.shelf__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shelf__chip[data-tone="warm"] { border-color: rgba(var(--warm-rgb), .5); color: var(--warm); }
+.shelf__chip[data-tone="warm"]::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--warm); box-shadow: 0 0 8px var(--warm); }
+.shelf__chip[data-tone="ok"] > .ico { color: var(--ok); }
+.shelf__x { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 3px; color: var(--text-3); }
+.shelf__x:hover { color: var(--text); background: var(--fill-2); }
+.shelf__x .ico { width: 12px; height: 12px; }
+.shelf__tip { font: 400 10.5px/1 var(--mono); letter-spacing: .04em; color: var(--text-3); white-space: nowrap; }
+/* Narrower than this the tip and the button beside it no longer fit on the shelf together. */
+@media (max-width: 1099px) { .shelf__tip { display: none; } }
+
+@keyframes win-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+
+/* ---------- One card at a time: "stacked" and "beside" ----------
+   Orbit and the card each have a place of their own, so neither covers the other. The card
+   is as wide as its place lets it be and scrolls inside it; the shelf is one line that
+   scrolls sideways. */
+.app:not([data-layout="windows"]) .stage--home { display: grid; gap: 0; grid-template: "home" minmax(0, 1fr) "shelf" auto / minmax(0, 1fr); }
+.app:not([data-layout="windows"]) .home { position: relative; inset: auto; grid-area: home; min-width: 0; min-height: 0; }
+.app:not([data-layout="windows"]) .home__in { padding: 0 16px 12px; }
+.app:not([data-layout="windows"]) .wins { display: none; position: relative; inset: auto; grid-area: wins; min-width: 0; min-height: 0; pointer-events: auto; }
+.app:not([data-layout="windows"]) .has-card .wins { display: flex; justify-content: center; align-items: flex-start; }
+.app:not([data-layout="windows"]) .win { position: relative; flex: 1 1 auto; min-width: 0; max-width: 560px; max-height: 100%; }
+.app:not([data-layout="windows"]) .win[data-tall] { height: 100%; }
+.app:not([data-layout="windows"]) .win__head { cursor: default; touch-action: auto; }
+/* In a narrow card the title is cut short first, and its tag only once the title is down
+   to a few letters, so the buttons stay in reach and a short tag stays whole. */
+.app:not([data-layout="windows"]) .win__head .panel__title { flex-shrink: 100; min-width: 5ch; }
+.app:not([data-layout="windows"]) .win__head .tag { display: block; min-width: 0; overflow: hidden; line-height: 16px; text-overflow: ellipsis; }
+.app:not([data-layout="windows"]) .win .panel__foot { flex-wrap: wrap; }
+.app:not([data-layout="windows"]) .shelf { position: relative; inset: auto; grid-area: shelf; min-width: 0; padding: 0 12px 8px; }
+.app:not([data-layout="windows"]) .shelf__items { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.app:not([data-layout="windows"]) .shelf__chip { flex: none; max-width: min(320px, 70vw); }
+.app:not([data-layout="windows"]) .shelf__word { display: none; }
+
+/* Stacked: Orbit in a strip along the top, the card below it. */
+.app[data-layout="stacked"] .stage--home.has-card { grid-template: "home" auto "wins" minmax(0, 1fr) "shelf" auto / minmax(0, 1fr); }
+.app[data-layout="stacked"] .has-card .wins { padding: 0 8px 8px; }
+
+/* Beside: Orbit in a column on the left, the card on the right. The bars give up some height. */
+.app[data-layout="beside"] { --top: 44px; }
+.app[data-layout="beside"] .stage--home.has-card { grid-template: "home wins" minmax(0, 1fr) "shelf wins" auto / clamp(200px, 34%, 300px) minmax(0, 1fr); }
+.app[data-layout="beside"] .has-card .wins { padding: 8px 8px 8px 0; }
+
+/* Orbit on its side, where its place is a strip: the orb on the left, its words on the right. */
+.home--row .home__in { flex-direction: row; gap: 14px; text-align: left; }
+.home--row .home__hello { display: none; }
+.home--row .home__orb { flex: none; width: var(--orb); height: var(--orb); min-height: 0; max-height: none; margin: 0; }
+.home--row .home__words { flex: 0 1 auto; min-width: 0; align-items: flex-start; }
+.home--row .home__state { text-indent: 0; }
+.home--row .home__try { justify-content: flex-start; }
+/* When the voice has to be turned on, that button is the one thing to press. */
+.home--row .home__words:has(> .btn) .home__try { display: none; }
+/* Above a card the strip is as tall as its words, as wide as the card, and says only the latest. */
+.app[data-layout="stacked"] .home--row { container-type: normal; }
+.app[data-layout="stacked"] .home--row .home__in { --orb: 72px; height: auto; max-width: 576px; margin: 0 auto; padding: 10px 16px; }
+.app[data-layout="stacked"] .home--row .home__words { flex: 1 1 0; }
+.app[data-layout="stacked"] .home--row .home__heard { height: 18px; margin-top: 6px; font-size: 12.5px; }
+.app[data-layout="stacked"] .home--row .home__line { min-height: 0; margin-top: 2px; font-size: 14px; line-height: 1.4; -webkit-line-clamp: 2; }
+.app[data-layout="stacked"] .home--row .home__try { display: none; }
+/* Alone on a short, wide screen it has the whole stage. */
+.app[data-layout="beside"] .home--row .home__in { --orb: clamp(96px, 100cqh - 40px, 200px); gap: 28px; padding: 0 24px; }
+@container home (max-height: 230px) {
+  .home--row .home__try { display: none; }
+  .home--row .home__line { min-height: 0; -webkit-line-clamp: 2; }
+}
+
+/* On a screen this short, a second line of buttons would leave no room for the draft above
+   them. The phrase to say gives way, so that the three buttons of an email draft share one line. */
+@media (max-height: 420px) {
+  .app:not([data-layout="windows"]) .win .panel__foot .say { display: none; }
+  .app:not([data-layout="windows"]) .win .panel__foot .btn { padding-inline: 10px; }
+}
+
+/* In a card as narrow as a phone, a reminder's time goes under its title, not beside it. */
+@media (max-width: 479px) {
+  .win .rem { grid-template-columns: 20px minmax(0, 1fr) auto; row-gap: 2px; }
+  .win .rem__when { grid-area: 2 / 2; text-align: left; }
+  .win .rem__when span { display: inline; margin-left: 8px; }
+  .win .rem > .win__btn { grid-area: 1 / 3 / span 2; }
+}
+
+/* Fingers need more to aim at than a mouse pointer does. */
+@media (pointer: coarse) {
+  .win__btn { width: 36px; height: 36px; }
+  .row__copy { width: 36px; height: 36px; }
+  .sheet__tab { height: 36px; }
+  .attach { height: 36px; }
+  .attach__x { width: 30px; height: 30px; }
+  .win__email summary { margin: -6px 0; padding: 6px 0; }
+  .shelf__chip { height: 38px; }
+  .shelf__x { width: 32px; height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win, .shelf__chip { animation: none; transition: none; }
+}
