@@ -47,6 +47,7 @@ import re
 import shutil
 import sys
 import tempfile
+import uuid
 from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,6 +82,15 @@ TOOLS = (
     "browser_tabs",
     "browser_close",
 )
+# What Orbit's own code uses in the browser, for the job tools: running a script of
+# its own, filling a form and putting a chosen file into one. None of these is offered
+# to the model.
+CODE_TOOLS = (
+    "browser_evaluate",
+    "browser_fill_form",
+    "browser_file_upload",
+    "browser_take_screenshot",
+)
 _DEFINITIONS = Path(__file__).with_name("browser_tools.json")
 
 # A page's snapshot can run to hundreds of thousands of characters.
@@ -98,6 +108,10 @@ _BLOCKED_ORIGINS = ";".join(
     for port in _ORBITS_OWN_PORTS
 )
 
+NO_CHOOSER = "Clicking it opened no file chooser, so no file was put in."
+NO_SCREENSHOT = "The browser could not take a picture of the page."
+# Where Playwright's server says it saved a screenshot, in the folder it writes to.
+_SAVED = re.compile(r"\]\((\.?/?[^)\s]+\.jpe?g)\)")
 # Added to what a page says when it asks for a check that the user is a person.
 PERSON_CHECK = (
     "\n\n[This page asks for a check that the user is a person. Only the user may do "
@@ -105,7 +119,13 @@ PERSON_CHECK = (
     "them in the browser, and if the browser is hidden, ask whether to show it. Go on "
     "once they say it is done.]"
 )
+# A tab as the server lists it: "- 1: (current) [Title](https://...)".
+_TAB = re.compile(r"^- (\d+):( \(current\))? .*\((\S+)\)(?: \[crashed\])?$", re.M)
 
+BUSY = (
+    "The browser is busy {what}. Wait until that is done, or ask the user whether to "
+    "stop it."
+)
 NOT_STARTED = (
     "The browser has not been started. Ask the user whether they want to see the "
     "browser while you work, then call browser_start with their answer."
@@ -324,6 +344,9 @@ def _step(name: str, arguments: dict[str, Any]) -> str:
     words = {
         "browser_snapshot": "Read the page",
         "browser_find": "Searched the page",
+        "browser_evaluate": "Looked through the page",
+        "browser_fill_form": "Filled in the form",
+        "browser_file_upload": "Attached a file",
         "browser_navigate_back": "Went back",
         "browser_press_key": "Pressed a key",
         "browser_wait_for": "Waited for the page",
@@ -655,6 +678,16 @@ def in_their_words(said: str, theirs: list[str]) -> bool:
     return False
 
 
+def script_result(text: str) -> Any:
+    """The JSON a script returned, from the server's answer: "### Result", the JSON,
+    then what code was run."""
+    found = re.search(r"### Result\n(.*?)(?:\n### |\Z)", text, re.DOTALL)
+    try:
+        return json.loads(found[1] if found else text)
+    except ValueError as e:
+        raise ToolError(f"The page could not be looked through: {text[:200]}") from e
+
+
 def _text(result: Any) -> str:
     """The text of a tool result as LiveKit hands it over: the JSON of one content
     item, or of a list of them."""
@@ -703,6 +736,8 @@ class _Open:
     # The address of the browser the server is attached to.
     endpoint: str | None = None
     tools: dict[str, mcp.MCPTool] = field(default_factory=dict)
+    # The tools only Orbit's own code calls.
+    own_tools: dict[str, mcp.MCPTool] = field(default_factory=dict)
     output_dir: str | None = None
 
 
@@ -752,6 +787,11 @@ class BrowserToolset(Toolset):
         # The one the model was sent to ask the user about, and how much had been
         # said by then: what the user says after it answers it.
         self._asking_local: tuple[str, int] | None = None
+        # What Orbit's own code is doing with the browser, such as searching for
+        # jobs. While it is, the model's browser tools wait. While it waits for the
+        # user to do something only they can, the browser may be shown or hidden.
+        self._busy: str | None = None
+        self._busy_lets_showing = False
 
         definitions = json.loads(_DEFINITIONS.read_text())
         self._tools = [
@@ -915,9 +955,14 @@ class BrowserToolset(Toolset):
         arguments: dict[str, Any],
         target: str | None,
         whole: bool = False,
+        own: bool = False,
     ) -> str:
         """Passes a call on to the server of the browser it is for, and its answer
-        back to the model: as it is, or with `whole`, a page written out as text."""
+        back to the model: as it is, or with `whole`, a page written out as text.
+        With `own` the call is Orbit's own code's: it may use CODE_TOOLS, the
+        server's answer comes back whole, and it is no step of a workflow."""
+        if not own:
+            self._check_free()
         if arguments.get("url") and name in ("browser_navigate", "browser_tabs"):
             arguments["url"] = whole_address(arguments["url"])
         if name == "browser_navigate":
@@ -926,17 +971,24 @@ class BrowserToolset(Toolset):
         if name == "browser_tabs" and arguments.get("url"):
             await self._check_local(context, arguments["url"])
         target, tools = await self._attach(target)
+        if own:
+            tools = {**tools, **self._open[target].own_tools}
         if name not in tools:
             raise ToolError(NOT_STARTED)
         # Every answer passes through here, whichever server gave it, so a page
         # on the user's own machine is caught even after a redirect.
         text = _text(await tools[name](arguments))
         self._allow_where_sent(context, text)
+        # A big page takes a while to write out: away from the agent's loop, so that
+        # its voice and its turns are not held up.
         if whole:
-            answer = readable_whole(text, self._local)
+            answer = await asyncio.to_thread(readable_whole, text, self._local)
+        elif own:
+            _check_pages(text, self._local)
+            answer = text
         else:
-            answer = readable(text, self._local)
-        if human_checks.asks(text):
+            answer = await asyncio.to_thread(readable, text, self._local)
+        if not own and human_checks.asks(text):
             answer += PERSON_CHECK
         opened = bool(arguments.get("url")) and name in (
             "browser_navigate",
@@ -947,7 +999,7 @@ class BrowserToolset(Toolset):
         self._current = target
         await stage.show(self._card(target), push={"steps": _step(name, arguments)})
         # What was done, for remembering the task as a workflow.
-        if (trace := workflows.trace_of(context)) is not None:
+        if not own and (trace := workflows.trace_of(context)) is not None:
             pages = _PAGE_URL.findall(text)
             browser = self._open[target]
             trace.note(
@@ -962,6 +1014,170 @@ class BrowserToolset(Toolset):
         if len(self._open) > 1:
             return f"[In the {target} browser]\n{answer}"
         return answer
+
+    # For Orbit's own tools, such as the job tools: the browser in use, driven by code
+    # rather than by the model. None of these is offered to the model.
+
+    @property
+    def in_use(self) -> bool:
+        """Whether this conversation has a browser to use."""
+        return self._current is not None or self._again is not None
+
+    def hold(self, what: str | None, showing: bool = False) -> None:
+        """Keeps the browser for Orbit's own code while it works, such as searching
+        for jobs: until release(), the model's browser tools say so and wait. With
+        `showing`, Orbit is waiting for the user to do something in the browser
+        that only they can, such as a check that they are a person, so the browser
+        may be shown, or hidden, meanwhile."""
+        self._busy = what
+        self._busy_lets_showing = showing and what is not None
+
+    @property
+    def holding(self) -> tuple[str | None, bool]:
+        """What the browser is held for, and whether it may be shown meanwhile."""
+        return self._busy, self._busy_lets_showing
+
+    def release(self) -> None:
+        self.hold(None)
+
+    def _check_free(self, showing: bool = False) -> None:
+        if self._busy and not (showing and self._busy_lets_showing):
+            raise ToolError(BUSY.format(what=self._busy))
+
+    async def open_page(
+        self, context: RunContext | None, url: str, settle: str = ""
+    ) -> str:
+        """Opens a page in the browser in use, and reads it whole as browser_read
+        does, once `settle`, a script of Orbit's own, has waited for it to be ready,
+        when one is given. The same checks apply as when the model opens one."""
+        target = self._which("")
+        await self._forward(context, "browser_navigate", {"url": url}, target, own=True)
+        if settle:
+            try:
+                await self.run_script(context, settle)
+            except ToolError:
+                # A page that cannot be waited on is read as it is.
+                logger.info("a page could not be waited on: %s", url)
+        return await self.read_page(context)
+
+    async def read_page(self, context: RunContext | None) -> str:
+        """The page open in the browser in use, written out whole."""
+        return await self._forward(
+            context, "browser_snapshot", {}, self._which(""), whole=True, own=True
+        )
+
+    async def run_script(self, context: RunContext | None, function: str) -> Any:
+        """What a script of Orbit's own finds on the page open in the browser in use:
+        the JSON it returns."""
+        text = await self._forward(
+            context,
+            "browser_evaluate",
+            {"function": function},
+            self._which(""),
+            own=True,
+        )
+        return script_result(text)
+
+    async def click(self, context: RunContext | None, target: str, what: str) -> str:
+        """Clicks something on the page in the browser in use, found by a selector of
+        Orbit's own: the server's answer, whole."""
+        return await self._forward(
+            context,
+            "browser_click",
+            {"target": target, "element": what},
+            self._which(""),
+            own=True,
+        )
+
+    async def type_into(
+        self, context: RunContext | None, target: str, text: str, what: str
+    ) -> None:
+        """Types into a field key by key, as a person would, so a page that lists
+        suggestions as one types shows them."""
+        await self._forward(
+            context,
+            "browser_type",
+            {"target": target, "text": text, "element": what, "slowly": True},
+            self._which(""),
+            own=True,
+        )
+
+    async def press(self, context: RunContext | None, key: str) -> None:
+        await self._forward(
+            context, "browser_press_key", {"key": key}, self._which(""), own=True
+        )
+
+    async def fill_in(
+        self, context: RunContext | None, fields: list[dict[str, str]]
+    ) -> None:
+        """Fills in fields of the form on the page in the browser in use, each as the
+        server's fill_form takes it: a target, a name, a type and a value."""
+        await self._forward(
+            context, "browser_fill_form", {"fields": fields}, self._which(""), own=True
+        )
+
+    async def put_file(
+        self, context: RunContext | None, chooser: str, path: Path, what: str
+    ) -> None:
+        """Puts one file that Orbit's own code chose into a form: clicks what opens
+        the page's file chooser, then hands it the file. The browser takes files only
+        from its own folder, so a copy goes there first and stays until the browser
+        is closed, since a page may read the file again when its form is sent."""
+        target = self._which("")
+        if target is None:
+            raise ToolError(NOT_STARTED)
+        clicked = await self.click(context, chooser, what)
+        if "File chooser" not in clicked:
+            raise ToolError(NO_CHOOSER)
+        folder = self._open[target].output_dir
+        if folder is None:
+            raise ToolError(NOT_STARTED)
+        copy = Path(folder) / "files" / uuid.uuid4().hex / path.name
+        copy.parent.mkdir(parents=True)
+        shutil.copyfile(path, copy)
+        await self._forward(
+            context, "browser_file_upload", {"paths": [str(copy)]}, target, own=True
+        )
+
+    async def screenshot(self, context: RunContext | None) -> bytes:
+        """What the page in front in the browser in use looks like, as a JPEG of what
+        its window shows. The picture is read and then deleted: nothing is kept."""
+        target = self._which("")
+        if target is None:
+            raise ToolError(NOT_STARTED)
+        said = await self._forward(
+            context, "browser_take_screenshot", {"type": "jpeg"}, target, own=True
+        )
+        folder = self._open[target].output_dir
+        found = _SAVED.search(said)
+        if folder is None or found is None:
+            raise ToolError(NO_SCREENSHOT)
+        path = (Path(folder) / found[1]).resolve()
+        if not path.is_relative_to(Path(folder).resolve()):
+            raise ToolError(NO_SCREENSHOT)
+        try:
+            return path.read_bytes()
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def tabs(self, context: RunContext | None) -> list[tuple[int, bool, str]]:
+        """The tabs open in the browser in use: each one's index, whether it is the
+        one in front, and its address."""
+        text = await self._forward(
+            context, "browser_tabs", {"action": "list"}, self._which(""), own=True
+        )
+        return [
+            (int(found[1]), bool(found[2]), found[3]) for found in _TAB.finditer(text)
+        ]
+
+    async def to_tab(self, context: RunContext | None, index: int) -> None:
+        await self._forward(
+            context,
+            "browser_tabs",
+            {"action": "select", "index": index},
+            self._which(""),
+            own=True,
+        )
 
     async def _check_local(self, context: RunContext | None, url: str) -> None:
         """Lets the browser open an address on the user's own computer or network
@@ -1070,6 +1286,7 @@ class BrowserToolset(Toolset):
             browser: The name of an open browser, to show or hide that one. Leave
                 it empty otherwise.
         """
+        self._check_free(showing=True)
         if show_browser is None:
             # Not theirs to say again: like the browser in use, or like the last
             # one once it is closed. For the very first one they have to be asked.
@@ -1339,6 +1556,7 @@ class BrowserToolset(Toolset):
             raise ToolError(NOT_STARTABLE) from e
         browser.server, browser.endpoint = server, running.endpoint
         browser.tools = {tool.id: tool for tool in tools if tool.id in TOOLS}
+        browser.own_tools = {tool.id: tool for tool in tools if tool.id in CODE_TOOLS}
         return True
 
     async def _show_or_hide(self, name: str, show: bool) -> int:
@@ -1402,6 +1620,7 @@ class BrowserToolset(Toolset):
         Playwright's own browser_close would only close the page, and leave a
         browser it did not start running with nothing in it.
         """
+        self._check_free()
         async with self._starting:
             if asked.strip().casefold() == ALL:
                 names = list(self._open)

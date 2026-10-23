@@ -1607,6 +1607,64 @@ async def test_the_model_is_told_about_a_browser_that_was_left_open(browser):
     assert "\nThe browser is still open" in instructions
 
 
+# Orbit's own calls, for the job tools.
+
+
+async def test_the_model_is_never_offered_orbits_own_tools(browser):
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    offered = {t.id for t in browser.toolset.tools}
+    assert not offered & set(browser_tools.CODE_TOOLS)
+
+
+async def test_a_file_is_put_into_a_form_through_its_chooser(browser, tmp_path):
+    browser.answers(
+        "browser_click",
+        "### Modal state\n- [File chooser]: can be handled by browser_file_upload",
+    )
+    await tool(browser, "browser_start")(None, show_browser=True)
+    resume = tmp_path / "Asha Rao - Resume.pdf"
+    resume.write_bytes(b"%PDF-1.4 a resume")
+
+    await browser.toolset.put_file(None, "#attach", resume, "Resume/CV")
+
+    click, upload = browser.asked()[-2:]
+    assert (click["tool"], click["arguments"]["target"]) == ("browser_click", "#attach")
+    assert upload["tool"] == "browser_file_upload"
+    [copy] = map(Path, upload["arguments"]["paths"])
+    # The browser takes files only from its own folder: a copy goes there.
+    (open_browser,) = browser.toolset._open.values()
+    assert copy.is_relative_to(open_browser.output_dir)
+    assert copy.name == resume.name and copy.read_bytes() == resume.read_bytes()
+
+
+async def test_no_file_is_put_in_when_no_chooser_opens(browser, tmp_path):
+    browser.answers("browser_click", "### Page\n- Page URL: https://example.com/")
+    await tool(browser, "browser_start")(None, show_browser=True)
+    resume = tmp_path / "resume.pdf"
+    resume.write_bytes(b"%PDF-1.4")
+
+    with pytest.raises(ToolError, match="opened no file chooser"):
+        await browser.toolset.put_file(None, "#attach", resume, "Resume/CV")
+    assert "browser_file_upload" not in [name for _, name in browser.calls()]
+
+
+async def test_the_tabs_open_are_read(browser):
+    browser.answers(
+        "browser_tabs",
+        "### Result\n- 0: [Jobs | LinkedIn](https://www.linkedin.com/jobs/view/1/)\n"
+        "- 1: (current) [Apply (GitLab)](https://job-boards.greenhouse.io/gitlab/jobs/8)",
+    )
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    tabs = await browser.toolset.tabs(None)
+
+    assert tabs == [
+        (0, False, "https://www.linkedin.com/jobs/view/1/"),
+        (1, True, "https://job-boards.greenhouse.io/gitlab/jobs/8"),
+    ]
+
+
 # Checks that the user is a person.
 
 
@@ -1628,3 +1686,19 @@ async def test_a_page_asking_whether_the_user_is_a_person_is_left_to_them(browse
     assert "never click, type into or try to get past it" in (
         browser_tools.BROWSER_RULES
     )
+
+
+async def test_while_orbit_waits_for_the_user_the_browser_may_only_be_shown(browser):
+    await tool(browser, "browser_start")(None, show_browser=False)
+    browser.toolset.hold("waiting for the user to do a check", showing=True)
+
+    with pytest.raises(ToolError, match="busy waiting for the user"):
+        await tool(browser, "browser_navigate")(None, {"url": "https://example.com/"})
+    shown = await tool(browser, "browser_start")(
+        None, show_browser=True, said="show it"
+    )
+
+    assert shown["shown"] is True
+    browser.toolset.hold("searching for jobs")
+    with pytest.raises(ToolError, match="busy searching for jobs"):
+        await tool(browser, "browser_start")(None, show_browser=False, said="hide it")

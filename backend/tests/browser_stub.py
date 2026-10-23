@@ -28,12 +28,43 @@ DEFINITIONS = json.loads(
     ).read_text()
 )
 
+# What the real server also offers, which only Orbit's own code calls: running a
+# script, filling a form and putting a file into one.
+CODE = [
+    {
+        "name": "browser_evaluate",
+        "description": "Evaluate JavaScript expression on page or element",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"function": {"type": "string"}},
+            "required": ["function"],
+        },
+    },
+    {
+        "name": "browser_fill_form",
+        "description": "Fill multiple form fields",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"fields": {"type": "array", "items": {"type": "object"}}},
+            "required": ["fields"],
+        },
+    },
+    {
+        "name": "browser_file_upload",
+        "description": "Upload one or multiple files",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"paths": {"type": "array", "items": {"type": "string"}}},
+        },
+    },
+]
+
 server = Server("playwright-stub")
 
 
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
-    return [types.Tool(**definition) for definition in DEFINITIONS]
+    return [types.Tool(**definition) for definition in [*DEFINITIONS, *CODE]]
 
 
 @server.call_tool()
