@@ -323,6 +323,10 @@ def _draft(
         "draft": _told(preview),
         "next": next_step,
     }
+    # Made for an item of a list the user agreed to as a whole: see lists.py.
+    after = getattr(context.userdata, "after_draft", None)
+    if after is not None and (said := after(action)):
+        drafted["next"] = said
     if "html" in preview:
         drafted["formatting"] = FORMATTED
     if preview.get("attachments"):
@@ -1182,7 +1186,10 @@ async def confirm_action(
         ) from e
 
     gate.complete(action.id, result)
-    note_change(context)
+    # A handler says when what it did changed nothing of the user's: the yes that
+    # starts a list, which only gives the model its first item.
+    if result.get("changed", True):
+        note_change(context)
     done = {"status": "done", "action": _told(action.preview)}
     if handler is not None:
         done.update(result.get("told") or {})

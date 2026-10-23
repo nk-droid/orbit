@@ -292,6 +292,8 @@ class Trace:
         self._offered_at: int | None = None
         # A saved workflow was run in this conversation.
         self._ran_workflow = False
+        # A task was done for every item of a list in this conversation.
+        self._listing = False
         # How much had been said when the model was told to offer, or sent to ask:
         # what the user says after that answers it. None if it has not been.
         self.asked_from: int | None = None
@@ -309,6 +311,11 @@ class Trace:
         """A saved workflow is being run: this conversation is not offered."""
         self._ran_workflow = True
 
+    def doing_list(self) -> None:
+        """A task is being done for every item of a list: this conversation is not
+        offered. Its steps are the list's, and an offer would stop it midway."""
+        self._listing = True
+
     def offer(self, said: list[tuple[str, str]]) -> str:
         """What to add to a browser step's answer to have the model offer to
         remember the task, once it is worth remembering. Empty otherwise.
@@ -317,6 +324,8 @@ class Trace:
         offered, each further step carries it until the model has spoken, since
         it asks only when it has finished.
         """
+        if self._listing:
+            return ""
         if self._offered_at is not None:
             spoken = any(who == "assistant" for who, _ in said[self._offered_at :])
             return "" if spoken else OFFER
@@ -339,7 +348,12 @@ class Trace:
         have it offer to remember the task: only when the user asked for it with
         something they call theirs, as in "email my test address". Empty
         otherwise."""
-        if self._offered_at is not None or self._ran_workflow or kind in _ANSWERING:
+        if (
+            self._listing
+            or self._offered_at is not None
+            or self._ran_workflow
+            or kind in _ANSWERING
+        ):
             return ""
         if not any(who == "user" and _words(text) & _THEIRS for who, text in said):
             return ""

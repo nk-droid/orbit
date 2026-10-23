@@ -32,6 +32,7 @@ from agent_tools.browser import NO_BROWSER, BrowserToolset
 from agent_tools.charts import CHART_TOOLS, charts_note
 from agent_tools.google import GOOGLE_TOOLS
 from agent_tools.jobs import JobsToolset, jobs_note
+from agent_tools.lists import ListToolset, lists_note
 from agent_tools.memory import NO_MEMORY, connect_memory
 from agent_tools.reminders import REMINDER_TOOLS
 from agent_tools.screen import SCREEN_TOOLS
@@ -160,6 +161,7 @@ class Assistant(Agent):
         earlier_cut: bool = False,
         workflows: WorkflowToolset | None = None,
         jobs: JobsToolset | None = None,
+        lists: ListToolset | None = None,
     ) -> None:
         """`memory` holds Mem0's tools and `memory_note` tells the model what it
         already remembers; both come from connect_memory(). `browser` is the web
@@ -169,12 +171,16 @@ class Assistant(Agent):
         was left out; both come from session_memory. `workflows` holds the tasks the
         user asked Orbit to remember, done again in `browser` when they are tasks in
         the browser; it is made here if not given. So is `jobs`, the job tools, which
-        read the user's pages in `browser` and know what `memory_note` says."""
+        read the user's pages in `browser` and know what `memory_note` says, and
+        `lists`, which does one task for every item of a list, in one go."""
         earlier = earlier or []
         workflows = workflows or WorkflowToolset(browser)
         jobs = jobs or JobsToolset(browser, memory_note)
+        lists = lists or ListToolset(browser)
         saved = "\n\n".join(
-            note for note in (workflows.rules, charts_note(), jobs_note()) if note
+            note
+            for note in (workflows.rules, charts_note(), jobs_note(), lists_note())
+            if note
         )
         # Indented like the text around them, so the instructions dedent as one block.
         memory_note = (
@@ -213,6 +219,7 @@ class Assistant(Agent):
                 *([browser] if browser else []),
                 workflows,
                 jobs,
+                lists,
             ],
             instructions=textwrap.dedent(
                 f"""\
@@ -247,6 +254,7 @@ class Assistant(Agent):
                 - When an answer has a shape that is easier to look at than to listen to, such as a table, a comparison, steps to follow or a checklist, write it with write_on_screen and say the gist aloud. Keep a short answer spoken only.
                 - When the user asks for a chart or a graph of anything, such as numbers on a web page, in a search or in their data, draw one with show_chart and say the gist.
                 - When the user wants help finding or applying for jobs, use the job tools, starting with job_profile.
+                - When the user asks for something to be done for every item of a list, such as accepting all their invitations or replying to each of these emails, use for_each: gather every item first, from every page, then do the items one at a time as it gives them, without asking whether to go on. Never say all of them are done unless for_each or item_done has said the list is finished.
                 - When the user does ask you to read something out, such as all the messages of a chat, read out every one of them in full and in order, however many there are, saying who wrote each. Say first how many there are. Never give a summary in place of what you were asked to read.
                 - When the user asks what needs them, what they missed, or for a briefing, call waiting_on_me.
                 - The user can move a card to the background, bring it back, or close it, and can ask you to do the same. Use arrange_cards for that, and say in a few words what you did. If nothing matched, say so.

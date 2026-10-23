@@ -66,6 +66,9 @@ class OrbitState:
     # Whether a yes the user already gave covers a draft, such as their yes to one
     # task for every item of a list. None while nothing does.
     covered: Callable[[Action], bool] | None = None
+    # What the model is told to do with a draft made for such a list's item, in place
+    # of asking the user, or "" for any other draft. None while no list is being done.
+    after_draft: Callable[[Action], str] | None = None
 
 
 def note_change(context: Any) -> None:
