@@ -50,7 +50,13 @@ from workflows import store
 from workflows.store import Workflow
 
 from . import stage
-from .heard import HEARD_WITHIN, LOOK_EVERY, said_by_the_user, said_so_far
+from .heard import (
+    HEARD_WITHIN,
+    LOOK_EVERY,
+    latest_request,
+    said_by_the_user,
+    said_so_far,
+)
 
 if TYPE_CHECKING:
     from .browser import BrowserToolset
@@ -143,6 +149,12 @@ NEXT = (
     "the user asked another way."
 )
 DONE = "The page is open, and the workflow has no other steps."
+# A workflow done once is one item. Asked for every one, the model ran it once.
+EVERY = (
+    "If the user asked for this for every item of a list, gather the items and do "
+    "it for each with for_each, rather than running this once for one item."
+)
+_EVERY = re.compile(r"\b(all|every|each)\b", re.IGNORECASE)
 SAVED = (
     "Tell the user in a sentence what stays the same and what you will take from "
     "what they ask for each time."
@@ -727,6 +739,8 @@ class WorkflowToolset(Toolset):
             "steps_left": steps,
             "next": NEXT if steps else DONE,
         }
+        if _EVERY.search(" ".join(latest_request(said_so_far(context)))):
+            ran["every"] = EVERY
         if workflow.start_url and self._browser is not None:
             browser, page = await self._browser.open_saved(
                 context,
