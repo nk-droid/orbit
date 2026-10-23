@@ -18,6 +18,9 @@ import attachments as stored
 import writing
 from actions.effects import keep_in_gmail, perform
 from actions.gate import Action, GateError
+from charts import saving as chart_saving
+from charts import store as chart_store
+from charts.build import table_of
 from integrations.google import gcal, gdrive, gmail, gsheets, tokens
 from integrations.google.api import GoogleApiError
 from integrations.google.scopes import SERVICES, access_level
@@ -41,6 +44,21 @@ NEXT_STEP = (
 # A change to a sheet with more rows or cells than this is summed up aloud. Its
 # table is on the user's screen.
 READ_OUT_WHOLE = 5
+FIRST_CHART_NEXT_STEP = (
+    "The chart is on the user's screen. Tell them it will be kept in a new "
+    "spreadsheet in their Drive, Orbit charts, where every chart goes from now on, "
+    "and ask whether to go ahead. Call confirm_action only after they clearly agree "
+    "in their next message."
+)
+CHART_NEXT_STEP = (
+    "Say where the chart will go, a new tab in that spreadsheet, and ask whether to "
+    "go ahead. Call confirm_action only after they clearly agree in their next "
+    "message."
+)
+NO_CHART = (
+    "There is no chart with that id on the user's screen. Show it with show_chart "
+    "first."
+)
 SHEET_NEXT_STEP = (
     "This draft is on the user's screen as a table. Say what it does and how many "
     "rows or cells it touches, read out the first few, and ask whether to go ahead. "
@@ -214,6 +232,55 @@ async def _attached(
     office = await attaching.wants_office(context, was_office)
     gathered = await attaching.gather(_http(), references, office=office, key=key)
     return await _carrying(context, key, gathered, to)
+
+
+def _chart_table(view: dict[str, Any]) -> dict[str, Any]:
+    """A chart's numbers as the draft's table on the user's screen."""
+
+    def shown(value: Any) -> str:
+        if value is None:
+            return ""
+        return f"{value:g}" if isinstance(value, float) else str(value)
+
+    table = table_of(view)
+    return {
+        "columns": [str(header) for header in table[0]],
+        "rows": [[shown(value) for value in row] for row in table[1:]],
+    }
+
+
+def draft_first_save(
+    context: RunContext[OrbitState],
+    chart_id: str,
+    measured: str,
+    made: dict[str, Any],
+    view: dict[str, Any],
+) -> dict[str, Any]:
+    """Drafts making Orbit charts, with this chart in it: the one save that waits for
+    the user's yes, since it makes a file in their Drive."""
+    _require_write("gdrive")
+    preview = {
+        "what": "Keep charts in Google Sheets",
+        "where": f"{chart_saving.BOOK_TITLE}, a new spreadsheet in your Drive",
+        "chart": view["title"],
+        "chart_id": chart_id,
+        "table": _chart_table(view),
+    }
+    payload = {
+        "chart_id": chart_id,
+        "into": "",
+        "key": measured,
+        "kind": made["kind"],
+        "request": made,
+        "view": view,
+    }
+    return _draft(
+        context,
+        "sheets.add_chart",
+        payload,
+        preview,
+        next_step=FIRST_CHART_NEXT_STEP,
+    )
 
 
 def _draft(
@@ -1012,6 +1079,46 @@ async def _show_changed_sheet(action: Action, result: dict[str, Any]) -> None:
 
 
 @function_tool()
+async def sheets_draft_chart(
+    context: RunContext[OrbitState], chart_id: str, spreadsheet: str
+) -> dict[str, Any]:
+    """Draft saving a chart on the user's screen into one of their own Google Sheets,
+    as a new tab holding the chart's numbers and the chart. Nothing is saved by this
+    tool. Charts are kept in Orbit charts by themselves: use this only when the user
+    asks for a chart in a spreadsheet of theirs.
+
+    Args:
+        chart_id: The chart's id, as show_chart gave it.
+        spreadsheet: The spreadsheet's name as the user said it, without the word
+            sheet or spreadsheet.
+    """
+    _require_write("sheets")
+    view = chart_store.view(chart_id.strip())
+    if view is None:
+        raise ToolError(NO_CHART)
+    name = spreadsheet.strip()
+    with reading("Google Sheets"):
+        found = await gdrive.spreadsheets_named(_http(), name)
+    meant = [f for f in found if f["name"].casefold() == name.casefold()] or found
+    if len(meant) != 1:
+        names = ", ".join(f["name"] for f in found[:8]) or "none"
+        raise ToolError(
+            f"{len(meant) or 'No'} spreadsheets fit {name!r}: {names}. Ask which one."
+        )
+    preview = {
+        "what": "Save chart to Google Sheets",
+        "where": f"{meant[0]['name']}, in a new tab",
+        "chart": view["title"],
+        "chart_id": view.get("chart_id", chart_id),
+        "table": _chart_table(view),
+    }
+    payload = {"chart_id": chart_id.strip(), "into": meant[0]["id"], "view": view}
+    return _draft(
+        context, "sheets.add_chart", payload, preview, next_step=CHART_NEXT_STEP
+    )
+
+
+@function_tool()
 async def confirm_action(
     context: RunContext[OrbitState], action_id: str
 ) -> dict[str, Any]:
@@ -1050,7 +1157,17 @@ async def confirm_action(
         offer := trace.offer_after(action.kind, said_so_far(context))
     ):
         done["then"] = offer
-    if action.kind.startswith("sheets."):
+    if action.kind == "sheets.add_chart":
+        # The chart's card shows where it is now kept.
+        if (shown := chart_store.view(action.payload["chart_id"])) is not None:
+            await stage.show_chart(
+                action.payload["chart_id"],
+                shown["title"],
+                shown["source"].get("label", ""),
+            )
+        if result.get("link"):
+            done["saved_in"] = f"{result['spreadsheet']}, in the tab {result['tab']}"
+    elif action.kind.startswith("sheets."):
         await _show_changed_sheet(action, result)
         if spreadsheet_id := result.get("spreadsheet_id"):
             done["spreadsheet_id"] = spreadsheet_id
@@ -1122,6 +1239,7 @@ ACTION_TOOLS = [
     sheets_draft_cells,
     sheets_draft_delete_rows,
     sheets_draft_new,
+    sheets_draft_chart,
     confirm_action,
     cancel_action,
 ]

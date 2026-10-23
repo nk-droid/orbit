@@ -21,6 +21,7 @@ from livekit.agents.llm import ToolError
 
 from api.deck import LOOKAHEAD, unanswered
 from api.mail import waiting_mail
+from charts import sources as chart_sources
 from files import WRITTEN, kind_of, view_of
 from integrations.google import gcal, gchat, gdrive, gmail, gsheets
 from integrations.google.api import GoogleApiError, NotConnectedError, TooLargeError
@@ -49,6 +50,8 @@ MAX_CHATS_OFFERED = 8
 SHEET_ROWS_FOR_MODEL = 500
 SHEET_CHARS_FOR_MODEL = 30_000
 MAX_SHEETS_OFFERED = 8
+# How many tables read in a conversation are kept for charts, the latest.
+MAX_DATASETS = 10
 # An amount such as 4.50, and what in a cell or a header names its currency. Told
 # nothing, the model says an amount with two decimals in dollars.
 _AMOUNT = re.compile(r"-?\d[\d,]*\.\d+")
@@ -791,7 +794,16 @@ async def _opened_sheet(
     await stage.show_sheet(
         sheet["id"], sheet["title"], sheet["tab"], cells=cells, matching=matching
     )
-    return _sheet_for_model(sheet, matching)
+    # A chart can be made of what was read, by this name.
+    source = chart_sources.sheet_source(sheet, cells, matching)
+    datasets = context.userdata.datasets
+    datasets.pop(source["label"], None)
+    datasets[source["label"]] = source
+    while len(datasets) > MAX_DATASETS:
+        datasets.pop(next(iter(datasets)))
+    told = _sheet_for_model(sheet, matching)
+    told["dataset"] = source["label"]
+    return told
 
 
 def _sheet_for_model(sheet: dict[str, Any], matching: str = "") -> dict[str, Any]:

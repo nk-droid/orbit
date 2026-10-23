@@ -162,6 +162,21 @@ async def show_sheet(
     )
 
 
+async def show_chart(chart_id: str, title: str, tag: str = "") -> None:
+    """A card drawing a chart. The app fetches the chart, worked out, from the backend
+    (api/charts.py). The same chart shown again after a change is fetched again."""
+    await show(
+        {
+            "id": f"chart:{chart_id}",
+            "kind": "chart",
+            "chart_id": chart_id,
+            "title": title,
+            "tag": tag,
+            "shown_at": round(time.time() * 1000),
+        }
+    )
+
+
 async def show_attachment(
     message_id: str, part: str, name: str, kind: str = ""
 ) -> None:

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from actions.gate import ActionGate
 
@@ -43,3 +44,9 @@ class OrbitState:
     # What was done in the browser, and where the user was offered to have a task
     # remembered as a workflow.
     trace: Trace = field(default_factory=Trace)
+    # The tables read in this conversation that a chart can be made from, by the name
+    # the model was given for each, with where each was read from.
+    datasets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The lists on pages the model was told it left rows out of, when the user asked
+    # for all of them, and which rows: the same ones left out again are meant.
+    lists_left_short: dict[str, frozenset[str]] = field(default_factory=dict)

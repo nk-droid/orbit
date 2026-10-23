@@ -1,8 +1,9 @@
-"""What the user has said in this conversation, for tools that must not take the
-model's word for it.
+"""What the user has said in this conversation, and what tools gave, for tools that
+must not take the model's word for it.
 
 A tool that needs the user's own wish, such as putting a file on an email, asks the
-model to pass on what the user said and then looks for those words here.
+model to pass on what the user said and then looks for those words here. A chart
+looks here for the numbers it is given.
 """
 
 from livekit.agents import RunContext
@@ -50,3 +51,25 @@ def latest_request(said: list[tuple[str, str]]) -> list[str]:
 def said_by_the_user(context: RunContext) -> list[str]:
     """What the user has said in this conversation, as far as it is on record."""
     return [text for who, text in said_so_far(context) if who == "user"]
+
+
+def given_by_tools(context: RunContext) -> list[tuple[str, str, str]]:
+    """What tools have given in this conversation, in order: each tool's name, what
+    the model asked it with, and what it gave back, such as a page the browser read.
+    A tool that failed gave nothing."""
+    try:
+        items = context.session.history.items
+    except (AttributeError, RuntimeError):
+        return []
+    asked = {
+        item.call_id: item.arguments or ""
+        for item in items
+        if getattr(item, "type", None) == "function_call"
+    }
+    return [
+        (item.name, asked.get(item.call_id, ""), item.output or "")
+        for item in items
+        if getattr(item, "type", None) == "function_call_output"
+        and not item.is_error
+        and not str(getattr(item, "id", "")).startswith(EARLIER_ID)
+    ]

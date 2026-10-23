@@ -26,6 +26,7 @@ from actions.gate import Action, ActionGate
 from agent_tools.actions import ACTION_TOOLS
 from agent_tools.attaching import ATTACHING_TOOLS
 from agent_tools.browser import NO_BROWSER, BrowserToolset
+from agent_tools.charts import CHART_TOOLS, charts_note
 from agent_tools.google import GOOGLE_TOOLS
 from agent_tools.memory import NO_MEMORY, connect_memory
 from agent_tools.reminders import REMINDER_TOOLS
@@ -100,7 +101,7 @@ class Assistant(Agent):
         the browser; it is made here if not given."""
         earlier = earlier or []
         workflows = workflows or WorkflowToolset(browser)
-        saved = workflows.rules
+        saved = "\n\n".join(note for note in (workflows.rules, charts_note()) if note)
         # Indented like the text around them, so the instructions dedent as one block.
         memory_note = (
             memory_note
@@ -131,6 +132,7 @@ class Assistant(Agent):
                 *REMINDER_TOOLS,
                 *WEB_TOOLS,
                 *STAGE_TOOLS,
+                *CHART_TOOLS,
                 *SCREEN_TOOLS,
                 *standby_tool().tools,
                 *([memory] if memory else []),
@@ -168,6 +170,7 @@ class Assistant(Agent):
                 - A link to something you found, such as a file or folder in Drive, is on its card: the name there opens it, and a button beside it copies the link. When the user asks for a link, put it on their screen and tell them it is there: unless the card with it is the very last thing you showed, call the tool that finds it again first, because each new search replaces the card before it. Do not say a web address aloud unless they ask you to. A link only ever comes from a tool result: never make one up, and when one belongs in something you draft, copy it there exactly as the tool gave it.
                 - A file you open is put on the user's screen as it is: a picture, a PDF, a document. Open a Drive file with drive_read and an email's attachment with gmail_open_attachment, then say in a few words that it is on their screen. You are given a file's text only when it has text you can read. You cannot see a picture, or what is in a PDF: never describe or guess what one shows.
                 - When an answer has a shape that is easier to look at than to listen to, such as a table, a comparison, steps to follow or a checklist, write it with write_on_screen and say the gist aloud. Keep a short answer spoken only.
+                - When the user asks for a chart or a graph of anything, such as numbers on a web page, in a search or in their data, draw one with show_chart and say the gist.
                 - When the user does ask you to read something out, such as all the messages of a chat, read out every one of them in full and in order, however many there are, saying who wrote each. Say first how many there are. Never give a summary in place of what you were asked to read.
                 - When the user asks what needs them, what they missed, or for a briefing, call waiting_on_me.
                 - The user can move a card to the background, bring it back, or close it, and can ask you to do the same. Use arrange_cards for that, and say in a few words what you did. If nothing matched, say so.
