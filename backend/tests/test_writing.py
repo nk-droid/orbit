@@ -341,7 +341,7 @@ async def test_a_file_kept_as_written_is_not_turned_into_a_google_doc(
 
 class _Context:
     def __init__(self) -> None:
-        self.userdata = type("State", (), {"gate": ActionGate()})()
+        self.userdata = type("State", (), {"gate": ActionGate(), "handlers": {}})()
 
 
 @pytest.fixture

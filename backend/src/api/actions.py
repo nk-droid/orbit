@@ -21,6 +21,9 @@ class ActionRecord(BaseModel):
     # Where the email opens in Gmail, if it was put in the drafts there instead
     # of being sent.
     gmail_draft: str | None = None
+    # What came of an action Orbit carried out itself, in a few words, such as
+    # "Submitted" for a job application.
+    outcome: str | None = None
     # Seconds since the epoch.
     created_at: float
     updated_at: float
@@ -31,6 +34,10 @@ class ActionRecord(BaseModel):
 def actions(limit: int = 20) -> list[dict[str, Any]]:
     """The most recent actions, newest first."""
     return [
-        {**action, "gmail_draft": (action["result"] or {}).get("gmail_draft")}
+        {
+            **action,
+            "gmail_draft": (action["result"] or {}).get("gmail_draft"),
+            "outcome": (action["result"] or {}).get("outcome"),
+        }
         for action in store.recent(min(max(limit, 1), 100))
     ]

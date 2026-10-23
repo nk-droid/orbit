@@ -17,7 +17,7 @@ from livekit.agents.llm import ToolError
 import attachments as stored
 import writing
 from actions.effects import keep_in_gmail, perform
-from actions.gate import Action, GateError
+from actions.gate import Action, GateError, NotDoneError
 from charts import saving as chart_saving
 from charts import store as chart_store
 from charts.build import table_of
@@ -147,7 +147,9 @@ def _told(preview: dict[str, Any]) -> dict[str, Any]:
     """A draft as the model is told it: its words, without the HTML or the table the
     card draws, and each of its files as a name to say."""
     told = {
-        name: value for name, value in preview.items() if name not in ("html", "table")
+        name: value
+        for name, value in preview.items()
+        if name not in ("html", "table", "questions")
     }
     if "attachments" in told:
         told["attachments"] = [attaching.said_as(file) for file in told["attachments"]]
@@ -1140,8 +1142,15 @@ async def confirm_action(
     except GateError as e:
         raise ToolError(str(e)) from e
 
+    handler = context.userdata.handlers.get(action.kind)
     try:
-        result = await perform(_http(), action.kind, action.payload)
+        if handler is not None:
+            result = await handler(context, action)
+        else:
+            result = await perform(_http(), action.kind, action.payload)
+    except NotDoneError as e:
+        gate.fail(action.id, str(e))
+        raise ToolError(str(e)) from e
     except Exception as e:
         gate.fail(action.id, str(e))
         reason = _why_not(action.kind, e)
@@ -1151,6 +1160,9 @@ async def confirm_action(
 
     gate.complete(action.id, result)
     done = {"status": "done", "action": _told(action.preview)}
+    if handler is not None:
+        done.update(result.get("told") or {})
+        return done
     # A task done for something the user calls theirs may be done again.
     trace = trace_of(context)
     if trace is not None and (

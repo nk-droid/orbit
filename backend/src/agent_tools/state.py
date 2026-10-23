@@ -1,7 +1,8 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from actions.gate import ActionGate
+from actions.gate import Action, ActionGate
 
 from .workflows import Trace
 
@@ -50,3 +51,10 @@ class OrbitState:
     # The lists on pages the model was told it left rows out of, when the user asked
     # for all of them, and which rows: the same ones left out again are meant.
     lists_left_short: dict[str, frozenset[str]] = field(default_factory=dict)
+    # What carries out an approved draft of a kind that Orbit does itself rather
+    # than through Google, such as filling in a job application in the browser, by
+    # the draft's kind. Each is given the tool's context and the approved draft,
+    # and returns what the model is told.
+    handlers: dict[str, Callable[[Any, Action], Awaitable[dict[str, Any]]]] = field(
+        default_factory=dict
+    )

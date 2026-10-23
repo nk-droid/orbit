@@ -24,6 +24,12 @@ class GateError(Exception):
     """The action may not proceed. The message tells the model what to do instead."""
 
 
+class NotDoneError(Exception):
+    """An approved action that Orbit carries out itself, such as filling in a form in
+    the browser, stopped before it was done. The message says why, for the model to
+    tell the user."""
+
+
 @dataclass
 class Action:
     id: str
@@ -39,6 +45,8 @@ class Action:
     result: dict[str, Any] | None = None
     error: str | None = None
     updated_at: float = field(default=0.0)
+    # How long it waits for the user's answer, in seconds.
+    expiry: float = EXPIRY_SECONDS
 
 
 class ActionGate:
@@ -76,10 +84,15 @@ class ActionGate:
         return action
 
     def propose(
-        self, kind: str, payload: dict[str, Any], preview: dict[str, Any]
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        preview: dict[str, Any],
+        expiry: float = EXPIRY_SECONDS,
     ) -> Action:
         """Records a draft. Any earlier draft still waiting is withdrawn, so there is
-        only ever one thing the user's next "yes" could mean."""
+        only ever one thing the user's next "yes" could mean. A draft the user takes
+        longer to read, such as a job application, may wait longer than most."""
         for other in self._actions.values():
             if other.status == "awaiting_approval":
                 other.status = "cancelled"
@@ -90,6 +103,7 @@ class ActionGate:
             payload=payload,
             preview=preview,
             created_at=self._clock(),
+            expiry=expiry,
         )
         self._actions[action.id] = action
         self._changed(action)
@@ -133,7 +147,7 @@ class ActionGate:
                 f"That draft is {action.status}. Draft the action again if it is "
                 "still wanted."
             )
-        if self._clock() - action.created_at > EXPIRY_SECONDS:
+        if self._clock() - action.created_at > action.expiry:
             action.status = "expired"
             self._changed(action)
             raise GateError("That draft has expired. Draft the action again.")
