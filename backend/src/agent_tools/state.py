@@ -63,6 +63,9 @@ class OrbitState:
     # changed. A task done for every item of a list looks here before it takes the
     # model's word that an item is done.
     changed: int = 0
+    # Whether a yes the user already gave covers a draft, such as their yes to one
+    # task for every item of a list. None while nothing does.
+    covered: Callable[[Action], bool] | None = None
 
 
 def note_change(context: Any) -> None:

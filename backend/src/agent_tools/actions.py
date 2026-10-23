@@ -1159,7 +1159,9 @@ async def confirm_action(
     context.disallow_interruptions()
     gate = context.userdata.gate
     try:
-        action = gate.approve(action_id)
+        # A draft for one item of a list the user agreed to as a whole may need no
+        # yes of its own: see agent_tools/lists.py.
+        action = gate.approve(action_id, getattr(context.userdata, "covered", None))
     except GateError as e:
         raise ToolError(str(e)) from e
 

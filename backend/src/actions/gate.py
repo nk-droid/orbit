@@ -4,6 +4,8 @@ The model drafts an action and, after the user answers, asks for it to be carrie
 out. This module is the part that does not trust the model: it records what was
 drafted, whether the user was actually told about it, and whether they have said
 anything since. An action runs once, only for the exact draft that was reviewed.
+A draft made for one item of a list the user agreed to as a whole runs on that yes,
+when the list's code says the yes covers it (agent_tools/lists.py).
 """
 
 import time
@@ -137,8 +139,13 @@ class ActionGate:
             self._last_user_input_at > moment
         )
 
-    def approve(self, action_id: str) -> Action:
-        """Checks that the draft may run now and reserves it, or raises GateError."""
+    def approve(
+        self, action_id: str, covered: Callable[[Action], bool] | None = None
+    ) -> Action:
+        """Checks that the draft may run now and reserves it, or raises GateError.
+        `covered` says whether a yes the user already gave covers the draft, such as
+        their yes to one task for every item of a list: it then needs no answer of
+        its own."""
         action = self._require(action_id)
         if action.status == "done":
             raise GateError("That was already done. Do not do it again.")
@@ -151,19 +158,20 @@ class ActionGate:
             action.status = "expired"
             self._changed(action)
             raise GateError("That draft has expired. Draft the action again.")
-        if action.reviewed_at is None:
-            raise GateError(
-                "The user has not been told the full draft yet. Read it to them, "
-                "ask whether to go ahead, and wait for their answer."
-            )
-        if (
-            self._last_user_input_at is None
-            or self._last_user_input_at <= action.reviewed_at
-        ):
-            raise GateError(
-                "The user has not answered since hearing the draft. Ask whether to "
-                "go ahead and wait for their answer."
-            )
+        if covered is None or not covered(action):
+            if action.reviewed_at is None:
+                raise GateError(
+                    "The user has not been told the full draft yet. Read it to them, "
+                    "ask whether to go ahead, and wait for their answer."
+                )
+            if (
+                self._last_user_input_at is None
+                or self._last_user_input_at <= action.reviewed_at
+            ):
+                raise GateError(
+                    "The user has not answered since hearing the draft. Ask whether "
+                    "to go ahead and wait for their answer."
+                )
         # Reserved before the effect starts, so a repeated call cannot run it twice.
         action.status = "running"
         self._changed(action)
