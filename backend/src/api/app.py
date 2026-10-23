@@ -7,6 +7,7 @@ from .charts import router as charts_router
 from .deck import router as deck_router
 from .files import router as files_router
 from .integrations import router as integrations_router
+from .jobs import router as jobs_router
 from .mail import router as mail_router
 from .reminders import router as reminders_router
 from .session import router as session_router
@@ -31,6 +32,7 @@ app.include_router(mail_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(sheets_router, prefix="/api")
 app.include_router(charts_router, prefix="/api")
+app.include_router(jobs_router, prefix="/api")
 app.include_router(attachments_router, prefix="/api")
 app.include_router(reminders_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
