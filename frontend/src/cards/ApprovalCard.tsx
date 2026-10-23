@@ -22,6 +22,7 @@ const OUTCOME: Record<Exclude<ActionRecord['status'], 'awaiting_approval'>, stri
 }
 
 function iconFor(kind: string): IconName {
+  if (kind.startsWith('list')) return 'repeat'
   if (kind.startsWith('jobs')) return 'briefcase'
   if (kind.startsWith('calendar')) return 'calendar'
   if (kind.startsWith('sheets')) return 'table'
@@ -41,6 +42,8 @@ const IN_THE_TABLE = ['rows', 'changes', 'columns']
 const GO_AHEAD: Record<string, [string, string]> = {
   'jobs.fill': ['Fill it in', 'Yes, fill it in.'],
   'jobs.submit': ['Submit', 'Yes, submit it.'],
+  'list.run': ['Do all of them', 'Yes, do all of them.'],
+  'list.send': ['Send them all', 'Yes, send them all.'],
 }
 
 /** A question on an application form, with its drafted answer and where the answer came from. */
@@ -96,6 +99,8 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
 
   const awaiting = action.status === 'awaiting_approval'
   const done = action.status === 'done'
+  // A draft kept to go out with others, such as each reply a list wrote, says where it went.
+  const setAside = action.status === 'cancelled' && Boolean(action.outcome)
   const formatted = typeof action.preview.html === 'string' ? action.preview.html : null
   const table = tableOf(action)
   const files = attachedTo(action)
@@ -109,7 +114,7 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
       title={String(action.preview.what ?? action.kind)}
       icon={iconFor(action.kind)}
       tone={awaiting ? 'warm' : done ? 'ok' : undefined}
-      tag={awaiting ? 'Awaiting go-ahead' : done ? 'Done' : inGmail ? 'In Gmail drafts' : action.status}
+      tag={awaiting ? 'Awaiting go-ahead' : done ? 'Done' : inGmail ? 'In Gmail drafts' : setAside ? 'Kept' : action.status}
       awaiting={awaiting}
       pad
       foot={
@@ -216,7 +221,7 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
         <p className={action.status === 'failed' ? 'is-error' : 'muted'} style={{ marginTop: 14 }}>
           {inGmail
             ? 'It is in your Gmail drafts for you to finish there. Nothing was sent.'
-            : (done && action.outcome) || OUTCOME[action.status]}
+            : ((done || setAside) && action.outcome) || OUTCOME[action.status]}
         </p>
       )}
       {awaiting && !voice.connected && <p className="muted" style={{ marginTop: 14 }}>The conversation has ended, so this draft can no longer be approved.</p>}
