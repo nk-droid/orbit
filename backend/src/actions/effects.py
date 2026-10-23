@@ -9,6 +9,8 @@ import aiohttp
 
 import attachments
 import writing
+from charts import saving as chart_saving
+from charts import store as chart_store
 from integrations.google import gcal, gdrive, gmail, gsheets
 
 from .gate import Action
@@ -169,6 +171,32 @@ async def _create_sheet(
     )
 
 
+async def _add_chart(
+    session: aiohttp.ClientSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Saves a chart into Sheets: into one of the user's spreadsheets, as a copy, or
+    into Orbit charts, made now if it is not there yet, where it is kept and pulled
+    from after."""
+    view = payload["view"]
+    if payload["into"]:
+        place = await chart_saving.add(session, payload["into"], view)
+    else:
+        book = chart_store.book() or await chart_saving.make_book(session)
+        place = await chart_saving.add(session, book.spreadsheet_id, view)
+        kept = {**view, "saved": chart_saving.saved_as(place)}
+        chart_store.save(
+            payload["chart_id"], payload["key"], payload["kind"], payload["request"],
+            kept, place.spreadsheet_id, place.spreadsheet_title, place.tab_id,
+            place.tab_title, place.chart_id, place.link,
+        )  # fmt: skip
+        chart_store.put_view(payload["chart_id"], kept)
+    return {
+        "spreadsheet": place.spreadsheet_title,
+        "tab": place.tab_title,
+        "link": place.link,
+    }
+
+
 EFFECTS: dict[str, Effect] = {
     "gmail.send_reply": _send_email,
     "gmail.send_email": _send_email,
@@ -181,6 +209,7 @@ EFFECTS: dict[str, Effect] = {
     "sheets.set_cells": _set_cells,
     "sheets.delete_rows": _delete_rows,
     "sheets.create": _create_sheet,
+    "sheets.add_chart": _add_chart,
 }
 
 

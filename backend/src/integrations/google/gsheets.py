@@ -371,6 +371,23 @@ async def raw_rows(
     }
 
 
+async def table(
+    session: aiohttp.ClientSession, spreadsheet_id: str, tab: str
+) -> list[list[Any]]:
+    """Every row of a tab from A1, as kept: numbers as numbers, text as text."""
+    (part,) = await _value_ranges(
+        session, spreadsheet_id, [quoted(tab)], render="UNFORMATTED_VALUE"
+    )
+    return [list(values) for values in part.get("values", [])]
+
+
+async def update(
+    session: aiohttp.ClientSession, spreadsheet_id: str, requests: list[dict]
+) -> dict[str, Any]:
+    """Changes a spreadsheet: tabs, cells and charts, in one call."""
+    return await _batch(session, spreadsheet_id, requests)
+
+
 async def headers_and_rows(
     session: aiohttp.ClientSession,
     spreadsheet_id: str,
