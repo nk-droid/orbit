@@ -32,6 +32,14 @@
 /* Draft details inside an approval card: label above nothing, value wraps. */
 .approve .kv dt { text-transform: uppercase; }
 .approve .kv dd { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.draft-answers { margin: 16px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.draft-answers li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 3px 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.draft-answers__number { grid-row: span 2; color: var(--text-3); font: 400 11px/1.7 var(--mono); }
+.draft-answers__question { color: var(--text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.draft-answers__answer { font-size: 13px; overflow-wrap: anywhere; white-space: pre-line; }
+.draft-answers__from { margin-left: 8px; color: var(--text-3); font: 400 10.5px/1 var(--mono); letter-spacing: .04em; white-space: nowrap; }
+.draft-answers .is-needed .draft-answers__answer { color: var(--warm); }
+.draft-answers .is-blank .draft-answers__answer { color: var(--text-3); }
 
 /* A draft the user can edit before sending. */
 textarea.draft__body { display: block; width: 100%; min-height: 240px; margin: 14px 0; resize: vertical; font: inherit; color: var(--text); outline: 0; }

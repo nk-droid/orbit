@@ -22,6 +22,7 @@ const OUTCOME: Record<Exclude<ActionRecord['status'], 'awaiting_approval'>, stri
 }
 
 function iconFor(kind: string): IconName {
+  if (kind.startsWith('jobs')) return 'briefcase'
   if (kind.startsWith('calendar')) return 'calendar'
   if (kind.startsWith('sheets')) return 'table'
   if (kind.startsWith('drive')) return 'file'
@@ -31,10 +32,25 @@ function iconFor(kind: string): IconName {
 // The parts of a draft that are its writing. When Orbit wrote it with formatting, the
 // draft also carries that writing as clean HTML, which is what will be sent or saved.
 const WRITING = ['body', 'content']
-// The parts that are not shown as a line of text: the title, the HTML, the table and the files.
-const NOT_A_LINE = ['what', 'html', 'table', 'attachments', 'chart_id']
+// The parts that are not shown as a line of text: the title, the HTML, the table, the files and the questions.
+const NOT_A_LINE = ['what', 'html', 'table', 'attachments', 'chart_id', 'questions']
 // What a change to a sheet says in words, for Orbit to read out. Its table shows the same.
 const IN_THE_TABLE = ['rows', 'changes', 'columns']
+
+// What the go-ahead button says for the drafts it does not simply carry out, and what it says to Orbit.
+const GO_AHEAD: Record<string, [string, string]> = {
+  'jobs.fill': ['Fill it in', 'Yes, fill it in.'],
+  'jobs.submit': ['Submit', 'Yes, submit it.'],
+}
+
+/** A question on an application form, with its drafted answer and where the answer came from. */
+type DraftAnswer = { number: number; question: string; answer: string; from: string; needs: boolean; blank: boolean }
+
+function questionsOf(action: ActionRecord): DraftAnswer[] {
+  const listed: unknown = action.preview.questions
+  if (!Array.isArray(listed)) return []
+  return listed.filter((item: unknown): item is DraftAnswer => typeof item === 'object' && item !== null && typeof (item as DraftAnswer).question === 'string')
+}
 
 /** A change to a sheet as a table: the rows it adds or deletes, or each cell's old and new value. */
 type DraftTable = { columns: string[]; rows: string[][] }
@@ -83,8 +99,10 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
   const formatted = typeof action.preview.html === 'string' ? action.preview.html : null
   const table = tableOf(action)
   const files = attachedTo(action)
+  const questions = questionsOf(action)
   // An email that was put in the user's Gmail drafts, to be finished there, and where it opens.
   const inGmail = action.gmail_draft?.startsWith('https://mail.google.com/') ? action.gmail_draft : null
+  const goAhead = GO_AHEAD[action.kind] ?? ['Go ahead', 'Yes, go ahead.']
   return (
     <CardFrame
       id={id}
@@ -97,9 +115,9 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
       foot={
         awaiting ? (
           <>
-            <button type="button" className="btn btn--primary" disabled={!voice.connected} onClick={() => voice.send('Yes, go ahead.')}>
+            <button type="button" className="btn btn--primary" disabled={!voice.connected} onClick={() => voice.send(goAhead[1])}>
               <Icon name="check" />
-              Go ahead <Say>yes, go ahead</Say>
+              {goAhead[0]} <Say>{goAhead[1].replace(/\.$/, '').toLowerCase()}</Say>
             </button>
             <button type="button" className="btn btn--ghost" disabled={!voice.connected} onClick={() => voice.send('No, cancel that.')}>
               Cancel
@@ -148,6 +166,21 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
           </div>
         )}
       </dl>
+      {questions.length > 0 && (
+        // Each answer under its question: a form's questions are too long for the columns of a table.
+        <ol className="draft-answers">
+          {questions.map((item) => (
+            <li key={item.number} className={item.needs ? 'is-needed' : item.blank ? 'is-blank' : undefined}>
+              <span className="draft-answers__number">{item.number}</span>
+              <span className="draft-answers__question">{item.question}</span>
+              <span className="draft-answers__answer">
+                {item.answer}
+                {item.from && <span className="draft-answers__from">{item.from}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
       {typeof action.preview.chart_id === 'string' && (
         <Suspense fallback={null}>
           <ChartPreview chartId={action.preview.chart_id} />
@@ -181,7 +214,9 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
       )}
       {action.status !== 'awaiting_approval' && (
         <p className={action.status === 'failed' ? 'is-error' : 'muted'} style={{ marginTop: 14 }}>
-          {inGmail ? 'It is in your Gmail drafts for you to finish there. Nothing was sent.' : OUTCOME[action.status]}
+          {inGmail
+            ? 'It is in your Gmail drafts for you to finish there. Nothing was sent.'
+            : (done && action.outcome) || OUTCOME[action.status]}
         </p>
       )}
       {awaiting && !voice.connected && <p className="muted" style={{ marginTop: 14 }}>The conversation has ended, so this draft can no longer be approved.</p>}

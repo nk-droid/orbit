@@ -14,6 +14,8 @@ export type ActionRecord = {
   error: string | null
   /** Where the email opens in Gmail, if it was put in the drafts there instead of being sent. */
   gmail_draft: string | null
+  /** What came of an action Orbit carried out itself, such as "Submitted" for a job application. */
+  outcome?: string | null
   /** Seconds since the epoch. */
   created_at: number
   updated_at: number
