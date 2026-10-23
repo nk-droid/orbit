@@ -3,6 +3,7 @@ import os
 import re
 import textwrap
 import time
+from collections.abc import Callable
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     cli,
+    get_job_context,
     llm,
     mcp,
     room_io,
@@ -49,6 +51,41 @@ load_dotenv(".env.local")
 # what was being said. Every answer also begins this much later, so longer is not
 # simply better. ORBIT_SILENCE_SECONDS in .env.local sets another length.
 SILENCE_SECONDS = 1.5
+
+# How many replies in a row may fail before Orbit ends the conversation. Gemini once
+# broke the session ("1011 Internal error encountered"), the plugin resumed it, and
+# the resumed session never answered again: every reply timed out for an hour while
+# the user typed and talked (livekit-plugins-google 1.8.4). Ended, the app shows the
+# session as lost, and pressing the orb starts a new one, afresh.
+FAILED_REPLIES = 2
+
+
+class Answering:
+    """Whether the voice model still answers, as each reply it was asked for ends:
+    replies that failed, `most` in a row, call `give_up`, once. A reply said in full
+    in between starts the count again."""
+
+    def __init__(self, give_up: Callable[[], None], most: int = FAILED_REPLIES) -> None:
+        self._give_up = give_up
+        self._most = most
+        self._failed = 0
+
+    def finished(self, error: BaseException | None, said_something: bool) -> None:
+        if isinstance(error, llm.RealtimeError):
+            self._failed += 1
+            if self._failed == self._most:
+                self._give_up()
+        elif said_something:
+            self._failed = 0
+
+
+def _end_lost(session: AgentSession) -> None:
+    """Ends a conversation whose voice model has stopped answering, without a word to
+    the app first: it then shows the session as lost, rather than as gone to standby."""
+    logger.error("the voice model stopped answering, so the conversation is ended")
+    session.shutdown(drain=False)
+    if (job := get_job_context(required=False)) is not None:
+        job.shutdown(reason="the voice model stopped answering")
 
 
 def earlier_context(said: list[tuple[str, str]]) -> llm.ChatContext:
@@ -328,6 +365,8 @@ def create_session(
     # model calls a tool in one piece of speech and reads the result out in the
     # next, so a draft counts as heard only once a piece of speech that began after
     # it was drafted has been said in full.
+    answering = Answering(lambda: _end_lost(session))
+
     @session.on("speech_created")
     def _on_speech(event) -> None:
         began_at = time.time()
@@ -338,6 +377,7 @@ def create_session(
             )
             if said_something and not handle.interrupted:
                 gate.note_agent_spoke(began_at)
+            answering.finished(handle.exception(), said_something)
 
         event.speech_handle.add_done_callback(finished)
 
