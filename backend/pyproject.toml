@@ -16,6 +16,7 @@ dependencies = [
     "livekit-api>=1.2.1",
     "livekit-plugins-ai-coustics~=0.3",
     "markdown-it-py>=4.2.0",
+    "pypdf>=6",
     "python-dotenv",
     "redis>=6",
     "uvicorn>=0.54.0",
