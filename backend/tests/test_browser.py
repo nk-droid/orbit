@@ -1605,3 +1605,26 @@ async def test_the_model_is_told_about_a_browser_that_was_left_open(browser):
     assert "without calling browser_start" in instructions
     # The note sits in the browser section, indented like the rest.
     assert "\nThe browser is still open" in instructions
+
+
+# Checks that the user is a person.
+
+
+async def test_a_page_asking_whether_the_user_is_a_person_is_left_to_them(browser):
+    browser.answers(
+        "browser_navigate",
+        "### Page\n- Page URL: https://example.com/\n### Snapshot\n```yaml\n"
+        '- heading "Verify you are human" [level=1] [ref=e2]\n```',
+    )
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    told = await tool(browser, "browser_navigate")(
+        None, {"url": "https://example.com/"}
+    )
+
+    assert "Only the user may do it: never click, type into or try to get past it" in (
+        told
+    )
+    assert "never click, type into or try to get past it" in (
+        browser_tools.BROWSER_RULES
+    )
