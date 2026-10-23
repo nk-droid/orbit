@@ -19,6 +19,7 @@ npm run lint
 | `src/home/` | The home: Orbit in the middle, and the command bar (`Dock.tsx`). |
 | `src/stage/` | The cards around Orbit: opening, moving and the background shelf, and the layout for each window size. |
 | `src/cards/` | One component per kind of card. |
+| `src/charts/` | Charts, drawn as SVG without a chart library from what the backend worked out. Loaded only when a chart is shown. |
 | `src/reminders/` | The reminders, and the alerts when one comes due. |
 | `src/components/` | Shared presentational pieces: `Orb`, `Icon`, `Panel`, `Tag` and so on. |
 | `src/styles/orbit.css` | The design system. `app.css` holds additions for the live app, and `stage.css` the cards. |

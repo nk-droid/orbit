@@ -127,3 +127,61 @@ button.rem__box:hover { border-color: var(--accent); background: rgba(var(--acce
   /* Below 16px, iOS zooms the whole page in when a field takes focus. */
   .dock__input input, .compose input, textarea.draft__body { font-size: 16px; }
 }
+
+/* ---------- Charts (charts/, cards/ChartCard.tsx) ----------
+   Drawn as SVG from numbers the backend worked out. Colours come from the theme through
+   each mark's style, since SVG attributes cannot take var(). */
+.chart { position: relative; }
+.chart__svg { display: block; overflow: visible; }
+.chart__grid line { stroke: var(--line); stroke-width: 1; }
+.chart__grid line[data-zero] { stroke: var(--line-2); }
+.chart__grid text { fill: var(--text-3); font: 400 10.5px/1 var(--mono); }
+.chart__label { fill: var(--text-3); font: 400 11px/1 var(--body); }
+.chart__value { fill: var(--text-2); font: 400 10.5px/1 var(--mono); pointer-events: none; }
+.chart__caption { fill: var(--text-2); font: 500 10px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; }
+.chart__hit { fill: transparent; }
+.chart g:hover > .chart__mark { opacity: .82; }
+.chart__line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+path.chart__area { fill-opacity: .16; }
+polygon.chart__area { fill-opacity: .5; }
+.chart__dot { stroke: var(--bg); stroke-width: 1; }
+.chart__guide { stroke: var(--line-2); stroke-dasharray: 3 3; }
+.chart__slice { stroke: var(--bg); stroke-width: 1.5; }
+.chart__share { fill: var(--bg); font: 600 11px/1 var(--mono); pointer-events: none; }
+.chart__whole { fill: var(--text); font: 500 20px/1 var(--display); letter-spacing: .04em; }
+.chart__key text { fill: var(--text-2); font: 400 11.5px/1 var(--body); }
+.chart__key .chart__key-value { fill: var(--text); font-family: var(--mono); }
+.chart__tip {
+  position: absolute; z-index: 2; display: grid; gap: 4px; min-width: 120px; padding: 8px 10px;
+  border: 1px solid var(--line-2); border-radius: 6px; background: rgba(6, 12, 20, .94);
+  color: var(--text); font: 400 12px/1.3 var(--body); white-space: nowrap; pointer-events: none;
+}
+.chart__tip b { font-weight: 500; }
+.chart__tip span { display: flex; align-items: center; gap: 6px; font-family: var(--mono); }
+.chart__tip i { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.chart__tip em { margin-right: auto; padding-right: 10px; color: var(--text-2); font: normal 400 12px/1.3 var(--body); }
+.chart__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; }
+.chart__legend button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none;
+  color: var(--text-2); font: 400 12px/1.2 var(--body); cursor: pointer;
+}
+.chart__legend button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.chart__legend i { width: 10px; height: 10px; border-radius: 2px; }
+.chart__key-list span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font: 400 12px/1.2 var(--body); }
+.chart__key-list b { color: var(--text); font: 400 12px/1.2 var(--mono); }
+.chart__notes { margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-3); font: 400 11.5px/1.45 var(--body); }
+.chart__when { margin-left: auto; color: var(--text-3); font: 400 11px/1 var(--mono); }
+.chart__numbers { max-height: 340px; overflow: auto; }
+.chart__numbers table { width: 100%; border-collapse: collapse; font: 400 12px/1.4 var(--mono); }
+.chart__numbers th, .chart__numbers td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+.chart__numbers th[scope="row"], .chart__numbers thead th:first-child { text-align: left; }
+.chart__numbers th[scope="row"] { color: var(--text-2); font: 400 12px/1.4 var(--body); }
+.chart__numbers thead th { position: sticky; top: 0; background: var(--bg); color: var(--text-3); font: 500 10px/1.2 var(--display); letter-spacing: .12em; text-transform: uppercase; }
+.chart__note { margin-top: 6px; color: var(--text-3); font-size: 11.5px; }
+.chart--draft { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .chart__svg .chart__mark, .chart__svg .chart__line, .chart__svg .chart__area { animation: chart-in .4s ease-out both; }
+}
+@keyframes chart-in { from { opacity: 0; } to { opacity: 1; } }
+/* Fingers need more to aim at in the legend than a pointer does. */
+@media (pointer: coarse) { .chart__legend button { padding: 6px 0; } }
