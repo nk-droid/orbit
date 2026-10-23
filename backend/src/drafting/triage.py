@@ -97,7 +97,13 @@ def _refusal(status: int, model: str, direct: bool) -> str:
     return f"Ollama answered with an error ({status})."
 
 
-async def _ask(instructions: str, data: str) -> str:
+async def ask(instructions: str, data: str, think: str = THINK) -> str:
+    """The drafting model's answer to `data`, as `instructions` ask, for any part of
+    Orbit that reads or writes with it. Raises ModelError if it cannot be used."""
+    return await _ask(instructions, data, think)
+
+
+async def _ask(instructions: str, data: str, think: str = THINK) -> str:
     url, model, headers = _endpoint()
     request = {
         "model": model,
@@ -106,7 +112,7 @@ async def _ask(instructions: str, data: str) -> str:
             {"role": "user", "content": data},
         ],
         "stream": False,
-        "think": THINK,
+        "think": think,
         "options": {"temperature": 0.2},
     }
     try:
