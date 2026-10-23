@@ -14,6 +14,7 @@ from agent import Assistant
 from agent_tools import browser as browser_tools
 from agent_tools import chrome
 from agent_tools.browser import (
+    MAX_READ_CHARS,
     MAX_RESULT_CHARS,
     TOOLS,
     BrowserToolset,
@@ -22,6 +23,7 @@ from agent_tools.browser import (
     is_local,
     named,
     readable,
+    readable_whole,
     whole_address,
 )
 from agent_tools.chrome import (
@@ -217,6 +219,96 @@ def test_an_answer_is_stripped_to_what_the_model_needs():
     assert readable(answer) == EXAMPLE
 
 
+# A page as Playwright's server gives it: each skill named twice, as a label and as
+# text, and a table whose rows are named by all of their cells.
+SKILLS_PAGE = """### Page
+- Page URL: https://www.me.example/
+- Page Title: Me
+### Snapshot
+```yaml
+- main [ref=e1]:
+  - heading "Skills" [level=2] [ref=e2]
+  - paragraph [ref=e3]: What I work with.
+  - list [ref=e4]:
+    - listitem [ref=e5]:
+      - generic "Python" [ref=e6]
+      - img [aria-hidden] [ref=e7]
+      - generic [ref=e8]:
+        - generic [ref=e9]: Python
+        - generic [ref=e10]: AI/ML, backend
+      - generic [ref=e11]: 5y+
+    - listitem [ref=e12]:
+      - generic "SQL" [ref=e13]
+      - generic [ref=e14]:
+        - generic [ref=e15]: SQL
+        - generic [ref=e16]: Queries
+      - generic [ref=e17]: Academic
+  - link "Resume" [ref=e18] [cursor=pointer]:
+    - /url: /resume.pdf
+  - table [ref=e19]:
+    - row "Year Hours" [ref=e20]:
+      - columnheader "Year" [ref=e21]
+      - columnheader "Hours" [ref=e22]
+    - row "2025 1,200" [ref=e23]:
+      - cell "2025" [ref=e24]
+      - cell "1,200" [ref=e25]
+```"""
+
+
+def test_a_page_read_whole_is_written_as_text():
+    assert readable_whole(SKILLS_PAGE).splitlines() == [
+        "- Page URL: https://www.me.example/",
+        "- Page Title: Me",
+        "### Text",
+        "## Skills",
+        "What I work with.",
+        "- Python | AI/ML, backend | 5y+",
+        "- SQL | Queries | Academic",
+        "Resume",
+        "- Year | Hours",
+        "- 2025 | 1,200",
+    ]
+
+
+def test_a_page_read_whole_is_cut_at_its_bound_and_says_so():
+    words = "- paragraph [ref=e9]: a sentence of the page\n" * 3000
+    answer = f"{EXAMPLE}\n### Snapshot\n```yaml\n{words}```"
+
+    text = readable_whole(answer)
+
+    assert text.startswith(EXAMPLE.split("\n", 1)[1])
+    assert len(text) < MAX_READ_CHARS + 400
+    assert "[The page is long:" in text
+    assert "target" in text
+
+
+def test_a_page_read_whole_on_the_users_machine_is_not_passed_on():
+    answer = SKILLS_PAGE.replace("https://www.me.example/", "http://localhost:5173/")
+
+    with pytest.raises(ToolError, match="own computer"):
+        readable_whole(answer)
+
+
+async def test_browser_read_reads_the_page_in_use_whole(browser):
+    browser.answers("browser_snapshot", SKILLS_PAGE)
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    whole = await tool(browser, "browser_read")(None)
+    part = await tool(browser, "browser_read")(None, target="e4")
+
+    assert "- Python | AI/ML, backend | 5y+" in whole
+    assert "[ref=" not in whole
+    assert [name for _, name in browser.calls()[-2:]] == [
+        "browser_snapshot",
+        "browser_snapshot",
+    ]
+    assert [call["arguments"] for call in browser.asked()[-2:]] == [
+        {},
+        {"target": "e4"},
+    ]
+    assert "- SQL | Queries | Academic" in part
+
+
 def test_a_long_page_is_cut_and_says_how_to_read_the_rest():
     answer = f"{EXAMPLE}\n### Snapshot\n" + "- paragraph: text\n" * 2000
 
@@ -225,6 +317,7 @@ def test_a_long_page_is_cut_and_says_how_to_read_the_rest():
     assert cut.startswith(EXAMPLE)
     assert len(cut) < MAX_RESULT_CHARS + 400
     assert "browser_find" in cut
+    assert "browser_read" in cut
 
 
 def test_a_page_that_ended_up_on_the_users_machine_is_not_passed_on():
@@ -237,6 +330,7 @@ def test_a_page_that_ended_up_on_the_users_machine_is_not_passed_on():
 async def test_the_browser_tools_are_all_there_before_the_browser_is(browser):
     assert [t.id for t in browser.toolset.tools] == [
         "browser_start",
+        "browser_read",
         "browser_list",
         *TOOLS,
     ]

@@ -83,6 +83,8 @@ _DEFINITIONS = Path(__file__).with_name("browser_tools.json")
 
 # A page's snapshot can run to hundreds of thousands of characters.
 MAX_RESULT_CHARS = 5000
+# A page read whole, as text without references: a few times what a snapshot shows.
+MAX_READ_CHARS = 20_000
 _CALL_TIMEOUT_SECONDS = 60
 # The ports of Orbit's own API and app on this computer, which hold the user's mail.
 # Checked again in code below, because the server's own blocking does not cover
@@ -173,10 +175,24 @@ NOTHING_RUNNING = (
 )
 # Words that turn down opening an address on the user's own computer.
 _REFUSING = frozenset({"no", "nope", "nah", "not", "don't", "dont", "never", "cancel"})
+# How a page cut short is marked, for tools that look at where a value came from.
+CUT_SHORT_MARK = "[The page is long:"
 TOO_LONG = (
-    "\n\n[The page is long: {total} characters, of which the first {shown} are "
-    "shown. Use browser_find to locate text, or browser_snapshot with a target "
-    "such as main and a small depth to read one part.]"
+    "\n\n" + CUT_SHORT_MARK + " {total} characters, of which the first {shown} are "
+    "shown. To read all of it, such as every item of a list, use browser_read. To "
+    "find something to click, use browser_find, or browser_snapshot with a target "
+    "such as main and a small depth.]"
+)
+READ_TOO_LONG = (
+    "\n\n" + CUT_SHORT_MARK + " {total} characters as text, of which the first "
+    "{shown} are shown. Read one part with target, a reference from "
+    "browser_snapshot or browser_find.]"
+)
+READ = (
+    "Read the page open in the browser in full, as text, with each list item and "
+    "table row on a line of its own: for all of something on a page, such as every "
+    "price or every skill, or to chart it. It gives no references for clicking: use "
+    "browser_snapshot for those."
 )
 
 CLOSED = "The {name} browser is closed, and whatever it was playing has stopped."
@@ -470,6 +486,133 @@ def readable(text: str, allowed: Collection[str] = ()) -> str:
     return text
 
 
+def readable_whole(text: str, allowed: Collection[str] = ()) -> str:
+    """A page's snapshot written out as text, whole up to a bounded length, with
+    where the page is first. `allowed` are as for readable()."""
+    _check_pages(text, allowed)
+    where = [line for line in text.splitlines() if line.startswith(_WHERE)]
+    whole = "\n".join([*where, "### Text", page_text(text)])
+    if len(whole) > MAX_READ_CHARS:
+        note = READ_TOO_LONG.format(total=len(whole), shown=MAX_READ_CHARS)
+        whole = whole[:MAX_READ_CHARS] + note
+    return whole
+
+
+# What says where a page is, kept above its text.
+_WHERE = ("- Page URL:", "- Page Title:")
+# A line of a snapshot: an element's role, its name, Playwright's notes on it in
+# brackets, and its text, as in '- link "Home" [ref=e5]: Welcome'.
+_SNAPSHOT_LINE = re.compile(r"^(?P<indent> *)- (?P<body>.*)$")
+_ELEMENT = re.compile(
+    r'^(?P<role>[a-z]+)(?: "(?P<name>(?:[^"\\]|\\.)*)")?(?P<notes>(?: \[[^\]]*\])*)'
+    r"(?::(?: (?P<text>.*))?)?$"
+)
+_LEVEL = re.compile(r"\[level=(\d)\]")
+_YAML = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
+# Not read out: pictures, and the parts of a form that are filled in.
+_UNREAD = frozenset(
+    {"img", "textbox", "searchbox", "combobox", "slider", "spinbutton", "property"}
+)
+# Each on a line of its own, its parts between bars: a list item or a table row.
+_ROWS = frozenset({"listitem", "row", "option", "menuitem", "tab", "treeitem"})
+# Read out on a line of their own, words and all.
+_LINES = frozenset(
+    {"paragraph", "link", "button", "text", "cell", "columnheader", "rowheader", "code"}
+)
+
+
+@dataclass
+class _Element:
+    role: str
+    name: str = ""
+    text: str = ""
+    depth: int = -1
+    level: int = 0
+    children: list["_Element"] = field(default_factory=list)
+
+
+def _unquoted(text: str) -> str:
+    text = text.strip()
+    if len(text) > 1 and text[0] == text[-1] == '"':
+        return text[1:-1].replace('\\"', '"')
+    return text
+
+
+def _elements(snapshot: str) -> _Element:
+    """A page's snapshot as the tree of its elements."""
+    root = _Element("root")
+    stack = [root]
+    for line in snapshot.splitlines():
+        found = _SNAPSHOT_LINE.match(line)
+        if not found:
+            continue
+        depth = len(found["indent"]) // 2
+        if parts := _ELEMENT.match(found["body"]):
+            level = _LEVEL.search(parts["notes"] or "")
+            element = _Element(
+                parts["role"],
+                (parts["name"] or "").replace('\\"', '"'),
+                _unquoted(parts["text"] or ""),
+                depth,
+                int(level[1]) if level else 0,
+            )
+        else:
+            # A property, such as where a link goes.
+            element = _Element("property", depth=depth)
+        while stack[-1].depth >= depth:
+            stack.pop()
+        stack[-1].children.append(element)
+        stack.append(element)
+    return root
+
+
+def _words(element: _Element) -> list[str]:
+    """The words of an element and everything in it, in order, each once where the
+    same words come twice in a row."""
+    words: list[str] = []
+
+    def walk(node: _Element) -> None:
+        if node.role in _UNREAD:
+            return
+        inner = " ".join(part for child in node.children for part in _words(child))
+        # A name made of the words inside, as a table row's is, is said once.
+        name = "" if inner and inner == " ".join(node.name.split()) else node.name
+        for part in (name, node.text):
+            part = " ".join(part.split())
+            if part and (not words or words[-1] != part):
+                words.append(part)
+        for child in node.children:
+            walk(child)
+
+    walk(element)
+    return words
+
+
+def _write(element: _Element, lines: list[str]) -> None:
+    if element.role in _UNREAD:
+        return
+    if element.role == "heading":
+        lines.append("#" * (element.level or 2) + " " + " ".join(_words(element)))
+    elif element.role in _ROWS:
+        lines.append("- " + " | ".join(_words(element)))
+    elif element.role in _LINES or not element.children:
+        if words := _words(element):
+            lines.append(" ".join(words))
+    else:
+        for child in element.children:
+            _write(child, lines)
+
+
+def page_text(answer: str) -> str:
+    """A page's snapshot, as Playwright's server gives it, written as text without
+    references: headings, paragraphs and links each on a line, and each list item
+    and table row on one line, its parts between bars."""
+    block = _YAML.search(answer)
+    lines: list[str] = []
+    _write(_elements(block[1] if block else answer), lines)
+    return "\n".join(lines)
+
+
 def named(asked: str, profiles: list[Profile]) -> Profile:
     """The profile the user means, from the name the model passed on."""
     if not profiles:
@@ -619,6 +762,7 @@ class BrowserToolset(Toolset):
                     "for one of their own Chrome profiles."
                 ),
             ),
+            function_tool(self._browser_read, name="browser_read", description=READ),
             function_tool(
                 self._browser_list,
                 name="browser_list",
@@ -738,15 +882,31 @@ class BrowserToolset(Toolset):
             },
         )
 
+    async def _browser_read(
+        self, context: RunContext, target: str = "", browser: str = ""
+    ) -> str:
+        """
+        Args:
+            target: A reference from browser_snapshot or browser_find, to read only
+                that part of the page. Leave empty for the whole page.
+            browser: Which browser to read, by its name, when more than one is open.
+                Leave empty for the browser used last.
+        """
+        arguments = {"target": target.strip()} if target.strip() else {}
+        return await self._forward(
+            context, "browser_snapshot", arguments, self._which(browser), whole=True
+        )
+
     async def _forward(
         self,
         context: RunContext | None,
         name: str,
         arguments: dict[str, Any],
         target: str | None,
+        whole: bool = False,
     ) -> str:
         """Passes a call on to the server of the browser it is for, and its answer
-        back to the model."""
+        back to the model: as it is, or with `whole`, a page written out as text."""
         if arguments.get("url") and name in ("browser_navigate", "browser_tabs"):
             arguments["url"] = whole_address(arguments["url"])
         if name == "browser_navigate":
@@ -761,7 +921,10 @@ class BrowserToolset(Toolset):
         # on the user's own machine is caught even after a redirect.
         text = _text(await tools[name](arguments))
         self._allow_where_sent(context, text)
-        answer = readable(text, self._local)
+        if whole:
+            answer = readable_whole(text, self._local)
+        else:
+            answer = readable(text, self._local)
         opened = bool(arguments.get("url")) and name in (
             "browser_navigate",
             "browser_tabs",
