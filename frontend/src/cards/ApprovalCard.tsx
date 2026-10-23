@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { AttachedFiles } from '../components/Attaching.tsx'
 import { Formatted } from '../components/Formatted.tsx'
 import { Icon } from '../components/Icon.tsx'
@@ -8,6 +9,9 @@ import type { ActionRecord } from '../lib/actions.ts'
 import type { Attached } from '../lib/attachments.ts'
 import { CardFrame } from '../stage/CardFrame.tsx'
 import { useVoice } from '../voice/voice-context.ts'
+
+// A chart about to be saved is drawn in its draft, from the part of the app that draws charts.
+const ChartPreview = lazy(() => import('../charts/ChartPreview.tsx'))
 
 const OUTCOME: Record<Exclude<ActionRecord['status'], 'awaiting_approval'>, string> = {
   running: 'In progress…',
@@ -28,7 +32,7 @@ function iconFor(kind: string): IconName {
 // draft also carries that writing as clean HTML, which is what will be sent or saved.
 const WRITING = ['body', 'content']
 // The parts that are not shown as a line of text: the title, the HTML, the table and the files.
-const NOT_A_LINE = ['what', 'html', 'table', 'attachments']
+const NOT_A_LINE = ['what', 'html', 'table', 'attachments', 'chart_id']
 // What a change to a sheet says in words, for Orbit to read out. Its table shows the same.
 const IN_THE_TABLE = ['rows', 'changes', 'columns']
 
@@ -144,6 +148,11 @@ export function ApprovalCard({ id, actionId }: { id: string; actionId: string })
           </div>
         )}
       </dl>
+      {typeof action.preview.chart_id === 'string' && (
+        <Suspense fallback={null}>
+          <ChartPreview chartId={action.preview.chart_id} />
+        </Suspense>
+      )}
       {table && (
         <div className="sheet sheet--draft">
           <table>

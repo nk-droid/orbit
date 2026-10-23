@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { ApprovalCard } from '../cards/ApprovalCard.tsx'
 import { ConnectionsCard } from '../cards/ConnectionsCard.tsx'
 import { FileCard } from '../cards/FileCard.tsx'
@@ -14,6 +15,9 @@ import { TrayCard } from '../cards/TrayCard.tsx'
 import { UploadCard } from '../cards/UploadCard.tsx'
 import type { CardSpec } from './stage-context.ts'
 import { useStage } from './stage-context.ts'
+
+// Charts come in a part of the app of their own, fetched the first time one is drawn.
+const ChartCard = lazy(() => import('../cards/ChartCard.tsx'))
 
 function Card({ spec }: { spec: CardSpec }) {
   switch (spec.kind) {
@@ -47,6 +51,12 @@ function Card({ spec }: { spec: CardSpec }) {
       return <UploadCard card={spec} />
     case 'browser':
       return <BrowserCard card={spec} />
+    case 'chart':
+      return (
+        <Suspense fallback={null}>
+          <ChartCard card={spec} />
+        </Suspense>
+      )
     default:
       // A kind this version of the app does not know: show nothing, not a broken card.
       return null

@@ -105,6 +105,14 @@ const ICONS = {
       <path d="M3 10h18M3 15h18M9 4v16" />
     </>
   ),
+  chart: (
+    <>
+      <path d="M3 20h18" />
+      <rect x="5.5" y="11" width="3" height="6" rx=".5" />
+      <rect x="10.5" y="6" width="3" height="11" rx=".5" />
+      <rect x="15.5" y="9" width="3" height="8" rx=".5" />
+    </>
+  ),
   image: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
