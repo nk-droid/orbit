@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import textwrap
 import time
 from datetime import datetime
@@ -51,13 +52,41 @@ SILENCE_SECONDS = 1.5
 
 
 def earlier_context(said: list[tuple[str, str]]) -> llm.ChatContext:
-    """What was said earlier in the session, as the history a conversation starts with."""
+    """What was said earlier in the session, as the history a conversation starts with.
+
+    An answer of Orbit's that turned something down is left out, and marked so. Told
+    that it could not do something, the model went on believing it in the next
+    conversation and refused again without trying, though its tools had changed
+    since: in 4 of 6 tries, a note in its instructions notwithstanding. Left out,
+    the request still has its answer, so it is not taken up again unasked.
+    """
     history = llm.ChatContext.empty()
     for n, (who, text) in enumerate(said):
+        if who == "assistant" and _TURNED_DOWN.search(text):
+            text = LEFT_OUT
         history.add_message(
             role=who, content=text, id=f"{session_memory.EARLIER_ID}{n}"
         )
     return history
+
+
+# What an answer that turns something down says: "I cannot open that", "I am unable
+# to access it", "I do not have the ability to make charts", "that is beyond what I
+# can do".
+_TURNED_DOWN = re.compile(
+    r"\b(can ?not|can['\u2019]?t|unable to|not able to|not allowed to|not possible|"
+    r"(?:do|does|did) ?n(?:o|['\u2019])t (?:\w+ly )?have "
+    r"(?:(?:the|a|an|any|that|this|such) )?"
+    r"(?:access|abilit(?:y|ies)|capabilit(?:y|ies)|means|tools?|way|option)|"
+    r"lacks? (?:(?:the|any) )?(?:access|abilit(?:y|ies)|capabilit(?:y|ies)|means|tools?)|"
+    r"not (?:capable|equipped|designed|built|set up) (?:of|to|for)|"
+    r"no (?:way|means|tools?|ability|capability) (?:to|for)|"
+    r"(?:beyond|outside(?: of)?) (?:my|what i can)|not something i can)\b",
+    re.IGNORECASE,
+)
+LEFT_OUT = (
+    "(An answer that said Orbit could not do this, left out: Orbit may be able to now.)"
+)
 
 
 def earlier_note(said: list[tuple[str, str]], cut: bool) -> str:
@@ -67,7 +96,9 @@ def earlier_note(said: list[tuple[str, str]], cut: bool) -> str:
     note = (
         "This session of Orbit began before this conversation, and what you and the "
         "user said in it is in your history. Use it when they refer back to it. You "
-        "remember it until they close Orbit, so it needs no saving."
+        "remember it until they close Orbit, so it needs no saving. What you said "
+        "then about what you could or could not do may be out of date, since your "
+        "tools change: when the user asks for something again, try it again."
     )
     return note + (" Only the latest part of it is there." if cut else "")
 

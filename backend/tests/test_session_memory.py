@@ -12,7 +12,13 @@ from livekit.agents import llm
 from redis_stub import FakeRedis
 
 import session_memory
-from agent import Assistant, create_session, earlier_context, earlier_note
+from agent import (
+    LEFT_OUT,
+    Assistant,
+    create_session,
+    earlier_context,
+    earlier_note,
+)
 from agent_tools.heard import said_so_far
 from api import session as session_api
 from api.app import app
@@ -126,6 +132,33 @@ def test_what_was_said_earlier_is_the_history_a_conversation_starts_with():
         ("assistant", "Noted."),
     ]
     assert all(item.id.startswith(session_memory.EARLIER_ID) for item in history.items)
+
+
+def test_an_earlier_answer_that_turned_something_down_is_left_out():
+    # Told then that it could not, the model refused again without trying.
+    history = earlier_context(
+        [
+            ("user", "Open http://localhost:3000."),
+            ("assistant", "I am unable to access local network addresses."),
+            ("user", "Thanks."),
+            ("assistant", "You\u2019re welcome. I can\u2019t wait to help again."),
+            ("assistant", "Noted."),
+            ("user", "Show it in a graph."),
+            ("assistant", "I do not have the ability to create graphs."),
+            ("assistant", "That is beyond my capabilities."),
+        ]
+    )
+
+    assert [item.text_content for item in history.items] == [
+        "Open http://localhost:3000.",
+        LEFT_OUT,
+        "Thanks.",
+        LEFT_OUT,
+        "Noted.",
+        "Show it in a graph.",
+        LEFT_OUT,
+        LEFT_OUT,
+    ]
 
 
 def test_the_model_is_told_of_the_earlier_session_only_when_there_is_one():
