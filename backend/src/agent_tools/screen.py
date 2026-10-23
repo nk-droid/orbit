@@ -411,12 +411,10 @@ async def capture_window(named: str) -> tuple[str, list[tuple[bytes, bytes]]]:
         return of, await _pictures([picture])
 
 
-async def seen(screens: list[bytes], question: str, of: str = "") -> str:
-    """What Gemini says the screens show, or the one window `of` names, in answer
-    to the user's question."""
-    count = len(screens)
+async def _asked(screens: list[bytes], prompt: str, **config: Any) -> str:
+    """Gemini's answer to a prompt about pictures, each read in high detail: a
+    screen is mostly small writing."""
     parts = [
-        # Read in high detail: a screen is mostly small writing.
         types.Part.from_bytes(
             data=screen,
             mime_type="image/jpeg",
@@ -424,22 +422,14 @@ async def seen(screens: list[bytes], question: str, of: str = "") -> str:
         )
         for screen in screens
     ]
-    if of:
-        shows = f"A screenshot of {of}"
-    elif count == 1:
-        shows = "A screenshot of the screen"
-    else:
-        shows = f"Screenshots of the {count} screens"
-    asked = SEEING.format(
-        shows=shows, question=question.strip() or "What is on the screen?"
-    )
     model = os.getenv("ORBIT_VISION_MODEL") or VISION_MODEL
-    config = types.GenerateContentConfig(
+    settings = types.GenerateContentConfig(
         # It reads what is there: no tools, and little thinking, which is slow.
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
         if model == VISION_MODEL
         else None,
+        **config,
     )
     client = genai.Client(
         api_key=os.getenv("GOOGLE_API_KEY"),
@@ -450,9 +440,40 @@ async def seen(screens: list[bytes], question: str, of: str = "") -> str:
     )
     async with client.aio as gemini:
         response = await gemini.models.generate_content(
-            model=model, contents=[*parts, asked], config=config
+            model=model, contents=[*parts, prompt], config=settings
         )
     return (response.text or "").strip()
+
+
+async def seen(screens: list[bytes], question: str, of: str = "") -> str:
+    """What Gemini says the screens show, or the one window `of` names, in answer
+    to the user's question."""
+    count = len(screens)
+    if of:
+        shows = f"A screenshot of {of}"
+    elif count == 1:
+        shows = "A screenshot of the screen"
+    else:
+        shows = f"Screenshots of the {count} screens"
+    asked = SEEING.format(
+        shows=shows, question=question.strip() or "What is on the screen?"
+    )
+    return await _asked(screens, asked)
+
+
+async def answered(
+    screens: list[bytes], prompt: str, schema: dict[str, Any]
+) -> dict[str, Any]:
+    """What Gemini makes of pictures, as JSON in the shape `schema` gives: for
+    Orbit's own code to act on, not for the user to hear."""
+    said = await _asked(
+        screens,
+        prompt,
+        response_mime_type="application/json",
+        response_json_schema=schema,
+    )
+    found = json.loads(said or "{}")
+    return found if isinstance(found, dict) else {}
 
 
 def _unseen(error: Exception) -> str:
