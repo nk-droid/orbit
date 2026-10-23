@@ -21,6 +21,8 @@ _DOCS = "https://docs.googleapis.com/v1/documents"
 _GOOGLE_DOC = "application/vnd.google-apps.document"
 _FOLDER = "application/vnd.google-apps.folder"
 SPREADSHEET = "application/vnd.google-apps.spreadsheet"
+# Files that hold a table written as text, which a chart can be made from.
+_TABLES = ("text/csv", "text/tab-separated-values")
 # What a Google Sheet is called when talking about it.
 SHEET_KIND = "Google Sheet"
 _FILE_FIELDS = "id,name,mimeType,modifiedTime,owners(displayName),webViewLink"
@@ -282,6 +284,20 @@ def written(view: files.View, data: bytes) -> dict[str, Any]:
     if view == "html":
         return {"text": None, "html": writing.clean(text), "text_truncated": cut}
     return {"text": text, "html": None, "text_truncated": cut}
+
+
+async def table_file(
+    session: aiohttp.ClientSession, file_id: str
+) -> tuple[str, str, str | None]:
+    """A file's name and type, and its words when it is a table written as text, such
+    as a CSV file. None for any other file."""
+    item = await api.get_json(
+        session, f"{_API}/files/{file_id}", {"fields": "name,mimeType"}
+    )
+    name, mime_type = item["name"], item["mimeType"]
+    if mime_type in _TABLES or name.casefold().endswith((".csv", ".tsv")):
+        return name, mime_type, files.decode(await _media(session, file_id))
+    return name, mime_type, None
 
 
 async def look(session: aiohttp.ClientSession, file_id: str) -> dict[str, Any]:

@@ -16,6 +16,8 @@ import aiohttp
 from . import api
 
 _API = "https://gmail.googleapis.com/gmail/v1/users/me"
+# How many ids one page of a search holds, at most.
+_PAGE = 500
 # Where Gmail takes a message too large for an ordinary call, as an upload.
 _UPLOAD = "https://gmail.googleapis.com/upload/gmail/v1/users/me"
 # An ordinary call carries a message inside a piece of JSON, which is not made for
@@ -151,6 +153,37 @@ async def raw_messages(
         )
     )
     return list(messages)
+
+
+async def every_id(
+    session: aiohttp.ClientSession, query: str, limit: int
+) -> tuple[list[str], bool]:
+    """The ids of the messages matching a Gmail search, newest first, page after page,
+    up to `limit`. Also says whether there were more."""
+    ids: list[str] = []
+    token = ""
+    while len(ids) < limit:
+        params: list[tuple[str, Any]] = [("maxResults", min(_PAGE, limit - len(ids)))]
+        params.append(("q", query) if query else ("labelIds", "INBOX"))
+        if token:
+            params.append(("pageToken", token))
+        listing = await api.get_json(session, f"{_API}/messages", params)
+        ids += [item["id"] for item in listing.get("messages", [])]
+        token = listing.get("nextPageToken", "")
+        if not token:
+            break
+    return ids[:limit], bool(token)
+
+
+async def headers_of(
+    session: aiohttp.ClientSession, message_ids: list[str], at_once: int = 20
+) -> list[dict[str, Any]]:
+    """Gmail's own message objects (headers only) for many ids, a few at a time:
+    Gmail answers only so many at once."""
+    found: list[dict[str, Any]] = []
+    for start in range(0, len(message_ids), at_once):
+        found += await raw_messages(session, message_ids[start : start + at_once])
+    return found
 
 
 async def raw_search(

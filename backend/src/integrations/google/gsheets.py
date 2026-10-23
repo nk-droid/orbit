@@ -132,7 +132,7 @@ async def spreadsheet(
             "That is not the id of a spreadsheet. Find the sheet with sheets_read."
         )
     fields = (
-        "spreadsheetId,spreadsheetUrl,properties(title),sheets(properties("
+        "spreadsheetId,spreadsheetUrl,properties(title,locale),sheets(properties("
         "sheetId,title,sheetType,hidden,gridProperties(rowCount,columnCount)))"
     )
     try:
@@ -167,6 +167,8 @@ async def spreadsheet(
         "title": data["properties"]["title"],
         "link": data.get("spreadsheetUrl"),
         "tabs": tabs,
+        # How the spreadsheet writes dates and numbers, such as en_IN.
+        "locale": data["properties"].get("locale", ""),
     }
 
 
@@ -209,10 +211,15 @@ async def _value_ranges(
     spreadsheet_id: str,
     ranges: list[str],
     render: str = "FORMATTED_VALUE",
+    dates: str = "",
 ) -> list[dict[str, Any]]:
-    """The values of several ranges in one call, in the order asked."""
+    """The values of several ranges in one call, in the order asked. With `dates`,
+    dates are given that way: FORMATTED_STRING keeps them readable in values that
+    are otherwise unformatted."""
     params: list[tuple[str, str]] = [("ranges", part) for part in ranges]
     params += [("valueRenderOption", render), ("majorDimension", "ROWS")]
+    if dates:
+        params.append(("dateTimeRenderOption", dates))
     data = await api.get_json(
         session, f"{_API}/{spreadsheet_id}/values:batchGet", params
     )
@@ -314,6 +321,7 @@ async def read(
         "id": book["id"],
         "title": book["title"],
         "link": book["link"],
+        "locale": book["locale"],
         "tabs": [tab["title"] for tab in book["tabs"]],
         "tab": sheet["title"],
         "tab_id": sheet["id"],
@@ -330,6 +338,36 @@ async def read(
         "last_row": last_row,
         # False when the tab has more rows than are read at once.
         "complete": bool(cells.strip()) or sheet["rows"] <= MAX_READ_ROWS,
+    }
+
+
+async def raw_rows(
+    session: aiohttp.ClientSession,
+    spreadsheet_id: str,
+    tab: str,
+    cells: str = "",
+) -> dict[int, list[Any]]:
+    """A tab's values as they are kept, numbers as numbers, by row number, each row
+    from column A on. Dates stay as the sheet writes them. read() gives the same
+    rows as the user sees them."""
+    book = await spreadsheet(session, spreadsheet_id)
+    sheet = tab_named(book, tab)
+    if cells.strip():
+        named, _ = area(cells)
+        where = f"{quoted(sheet['title'])}!{named}"
+    else:
+        where = _top(sheet, MAX_READ_ROWS)
+    (part,) = await _value_ranges(
+        session,
+        spreadsheet_id,
+        [where],
+        render="UNFORMATTED_VALUE",
+        dates="FORMATTED_STRING",
+    )
+    top, left = _start(part)
+    return {
+        top + offset: [""] * left + list(values)
+        for offset, values in enumerate(part.get("values", []))
     }
 
 

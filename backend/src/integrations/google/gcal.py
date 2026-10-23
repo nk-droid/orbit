@@ -8,6 +8,8 @@ import aiohttp
 from . import api
 
 _API = "https://www.googleapis.com/calendar/v3"
+# How many events one page of a listing holds, at most.
+_PAGE = 250
 
 
 def _when(moment: dict[str, Any]) -> str:
@@ -56,6 +58,30 @@ async def raw_events(
         },
     )
     return [item for item in data.get("items", []) if item.get("status") != "cancelled"]
+
+
+async def every_event(
+    session: aiohttp.ClientSession, start: datetime, end: datetime, limit: int
+) -> tuple[list[dict[str, Any]], bool]:
+    """Google's own event objects between two aware datetimes, page after page, up to
+    `limit`. Also says whether there were more."""
+    found: list[dict[str, Any]] = []
+    token = ""
+    while True:
+        params = {
+            "timeMin": start.isoformat(),
+            "timeMax": end.isoformat(),
+            "singleEvents": "true",
+            "orderBy": "startTime",
+            "maxResults": min(_PAGE, limit),
+        }
+        if token:
+            params["pageToken"] = token
+        data = await api.get_json(session, f"{_API}/calendars/primary/events", params)
+        found += [i for i in data.get("items", []) if i.get("status") != "cancelled"]
+        token = data.get("nextPageToken", "")
+        if not token or len(found) >= limit:
+            return found[:limit], bool(token) or len(found) > limit
 
 
 async def events(

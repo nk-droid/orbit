@@ -80,6 +80,15 @@ def open_reminders() -> list[Reminder]:
     return [Reminder(**row) for row in rows]
 
 
+def every() -> list[Reminder]:
+    """Every reminder, done and cancelled ones included, by when it is due."""
+    with connect(_SCHEMA) as connection:
+        rows = connection.execute(
+            f"SELECT {_COLUMNS} FROM reminders ORDER BY due_at"
+        ).fetchall()
+    return [Reminder(**row) for row in rows]
+
+
 def done_since(since: float) -> list[Reminder]:
     """What was marked done after `since`, most recent first."""
     with connect(_SCHEMA) as connection:
