@@ -62,6 +62,8 @@ export type CardSpec =
   | { id: string; kind: 'browser'; name?: string; shown: boolean; profile?: string; steps?: string[] }
   /** A chart, fetched from the backend with every number worked out. Shown again after a change, it is fetched again. */
   | { id: string; kind: 'chart'; chart_id: string; title?: string; tag?: string; shown_at?: number }
+  /** The user's job profile, fetched from the backend. Shown again after a change, it is fetched again. */
+  | { id: string; kind: 'profile'; shown_at?: number }
 
 export type CardKind = CardSpec['kind']
 
@@ -83,6 +85,7 @@ export const WIDTHS: Record<CardKind, number> = {
   upload: 380,
   browser: 360,
   chart: 560,
+  profile: 460,
 }
 
 /** Other words the user might use for each kind of card, when asking Orbit to move or close it. */
@@ -104,6 +107,7 @@ export const ALSO_CALLED: Record<CardKind, string> = {
   upload: 'upload picker popup',
   browser: 'browser',
   chart: 'chart graph plot',
+  profile: 'profile job jobs résumé resume',
 }
 
 /** A card as the agent is told about it. */

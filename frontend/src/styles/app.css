@@ -185,3 +185,12 @@ polygon.chart__area { fill-opacity: .5; }
 @keyframes chart-in { from { opacity: 0; } to { opacity: 1; } }
 /* Fingers need more to aim at in the legend than a pointer does. */
 @media (pointer: coarse) { .chart__legend button { padding: 6px 0; } }
+
+/* ---------- Job profile (cards/ProfileCard.tsx) ---------- */
+.kv.kv--wide { grid-template-columns: minmax(96px, 34%) minmax(0, 1fr); }
+.profile__group + .profile__group { margin-top: 16px; }
+.profile__group dd { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.profile__line { margin: 6px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.profile__source { margin-left: 8px; color: var(--text-3); font: 400 10.5px/1 var(--mono); letter-spacing: .04em; white-space: nowrap; }
+.profile__missing { color: var(--warm); }
+.profile__other { display: block; margin-top: 3px; color: var(--text-3); font-size: 12px; }

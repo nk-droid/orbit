@@ -105,6 +105,12 @@ const ICONS = {
       <path d="M3 10h18M3 15h18M9 4v16" />
     </>
   ),
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18" />
+    </>
+  ),
   chart: (
     <>
       <path d="M3 20h18" />

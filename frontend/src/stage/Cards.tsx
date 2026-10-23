@@ -6,6 +6,7 @@ import { BrowserCard, ListCard } from '../cards/FoundCards.tsx'
 import { MailCard } from '../cards/MailCard.tsx'
 import { NeedsCard } from '../cards/NeedsCard.tsx'
 import { NoteCard } from '../cards/NoteCard.tsx'
+import { ProfileCard } from '../cards/ProfileCard.tsx'
 import { RemindersCard } from '../cards/RemindersCard.tsx'
 import { ScreenshotCard } from '../cards/ScreenshotCard.tsx'
 import { SheetCard } from '../cards/SheetCard.tsx'
@@ -51,6 +52,8 @@ function Card({ spec }: { spec: CardSpec }) {
       return <UploadCard card={spec} />
     case 'browser':
       return <BrowserCard card={spec} />
+    case 'profile':
+      return <ProfileCard card={spec} />
     case 'chart':
       return (
         <Suspense fallback={null}>
