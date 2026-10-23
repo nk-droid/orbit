@@ -454,6 +454,14 @@ async def _batch(
     )
 
 
+async def write(
+    session: aiohttp.ClientSession, spreadsheet_id: str, data: list[dict]
+) -> dict[str, Any]:
+    """Writes values into ranges, such as {"range": "'Jobs'!A2", "values": [[...]]},
+    as if the user had typed them."""
+    return await _write(session, spreadsheet_id, data)
+
+
 async def _write(
     session: aiohttp.ClientSession, spreadsheet_id: str, data: list[dict]
 ) -> dict[str, Any]:

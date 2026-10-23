@@ -12,6 +12,8 @@ import writing
 from charts import saving as chart_saving
 from charts import store as chart_store
 from integrations.google import gcal, gdrive, gmail, gsheets
+from jobs import sheet as job_sheet
+from jobs import store as job_store
 
 from .gate import Action
 
@@ -197,6 +199,15 @@ async def _add_chart(
     }
 
 
+async def _make_jobs_book(
+    session: aiohttp.ClientSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Makes Orbit jobs, and writes into it every job found so far."""
+    book = job_store.book() or await job_sheet.make_book(session)
+    await job_sheet.sync(session)
+    return {"spreadsheet": book.title, "link": job_sheet.link(book)}
+
+
 EFFECTS: dict[str, Effect] = {
     "gmail.send_reply": _send_email,
     "gmail.send_email": _send_email,
@@ -210,6 +221,7 @@ EFFECTS: dict[str, Effect] = {
     "sheets.delete_rows": _delete_rows,
     "sheets.create": _create_sheet,
     "sheets.add_chart": _add_chart,
+    "jobs.make_book": _make_jobs_book,
 }
 
 
