@@ -24,6 +24,8 @@ from charts.build import table_of
 from integrations.google import gcal, gdrive, gmail, gsheets, tokens
 from integrations.google.api import GoogleApiError
 from integrations.google.scopes import SERVICES, access_level
+from jobs import sheet as job_sheet
+from jobs import store as job_store
 from reminders.when import WhenError, in_words, resolve
 
 from . import attaching, stage
@@ -44,6 +46,11 @@ NEXT_STEP = (
 # A change to a sheet with more rows or cells than this is summed up aloud. Its
 # table is on the user's screen.
 READ_OUT_WHOLE = 5
+FIRST_JOBS_NEXT_STEP = (
+    "Tell the user their job search will be kept in a new spreadsheet in their Drive, "
+    "Orbit jobs, where they review the jobs found and tick the ones to apply to, and "
+    "ask whether to go ahead. Call confirm_action only after they clearly agree."
+)
 FIRST_CHART_NEXT_STEP = (
     "The chart is on the user's screen. Tell them it will be kept in a new "
     "spreadsheet in their Drive, Orbit charts, where every chart goes from now on, "
@@ -249,6 +256,20 @@ def _chart_table(view: dict[str, Any]) -> dict[str, Any]:
         "columns": [str(header) for header in table[0]],
         "rows": [[shown(value) for value in row] for row in table[1:]],
     }
+
+
+def draft_jobs_book(context: RunContext[OrbitState]) -> dict[str, Any]:
+    """Drafts making Orbit jobs, the spreadsheet the user reviews jobs in: the one
+    write to it that waits for their yes, since it makes a file in their Drive."""
+    _require_write("gdrive")
+    preview = {
+        "what": "Keep your job search in Google Sheets",
+        "where": f"{job_sheet.BOOK_TITLE}, a new spreadsheet in your Drive",
+        "tabs": "Jobs, where you tick the ones to apply to; Searches; Applications",
+    }
+    return _draft(
+        context, "jobs.make_book", {}, preview, next_step=FIRST_JOBS_NEXT_STEP
+    )
 
 
 def draft_first_save(
@@ -1179,6 +1200,11 @@ async def confirm_action(
             )
         if result.get("link"):
             done["saved_in"] = f"{result['spreadsheet']}, in the tab {result['tab']}"
+    elif action.kind == "jobs.make_book":
+        # The jobs found so far, in the Sheet the user reviews them in.
+        if (book := job_store.book()) is not None:
+            await stage.show_sheet(book.spreadsheet_id, book.title, job_sheet.JOBS)
+            done["saved_in"] = f"{book.title}, in the tab {job_sheet.JOBS}"
     elif action.kind.startswith("sheets."):
         await _show_changed_sheet(action, result)
         if spreadsheet_id := result.get("spreadsheet_id"):

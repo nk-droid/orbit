@@ -177,6 +177,18 @@ async def show_chart(chart_id: str, title: str, tag: str = "") -> None:
     )
 
 
+async def show_profile() -> None:
+    """The card of the user's job profile. The app fetches it from the backend
+    (api/jobs.py), so it is fetched again each time it is shown after a change."""
+    await show(
+        {
+            "id": "jobs:profile",
+            "kind": "profile",
+            "shown_at": round(time.time() * 1000),
+        }
+    )
+
+
 async def show_attachment(
     message_id: str, part: str, name: str, kind: str = ""
 ) -> None:
