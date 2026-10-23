@@ -1,10 +1,14 @@
 import base64
 from email import message_from_bytes
+from types import SimpleNamespace
 
 import pytest
+from livekit.agents import llm
 
+import agent
 from actions.gate import EXPIRY_SECONDS, ActionGate, GateError
 from actions.store import recent, save
+from agent import create_session
 from integrations.google.gmail import build_raw
 
 
@@ -208,3 +212,70 @@ def test_the_gate_tells_whether_the_user_has_spoken_since_a_moment():
 
     assert gate.heard_from_user_since(asked_at)
     assert not gate.heard_from_user_since(12.0)
+
+
+# --- What counts as the user answering, in a conversation --------------------------
+
+
+@pytest.fixture
+async def conversation(monkeypatch, clock):
+    """A conversation's session, and whether its gate has heard from the user since
+    the moment it began."""
+    monkeypatch.setattr(
+        agent,
+        "ActionGate",
+        lambda on_change: ActionGate(clock=clock, on_change=on_change),
+    )
+    session = create_session()
+    began = session.userdata.gate.now()
+    clock.tick()
+    return session, lambda: session.userdata.gate.heard_from_user_since(began)
+
+
+async def test_a_turn_the_model_begins_by_itself_is_not_the_user_answering(
+    conversation,
+):
+    # With no voice activity detection of the session's own, LiveKit takes the user
+    # to be speaking whenever the model begins a turn by itself, as for a tool's
+    # result, and Gemini then sends no words of theirs.
+    session, answered = conversation
+
+    session.emit(
+        "user_state_changed",
+        SimpleNamespace(old_state="listening", new_state="speaking"),
+    )
+
+    assert not answered()
+
+
+async def test_the_user_is_heard_from_the_first_words_gemini_hears(conversation):
+    session, answered = conversation
+
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(transcript="Yes", is_final=False),
+    )
+
+    assert answered()
+
+
+async def test_a_transcript_without_words_is_not_an_answer(conversation):
+    session, answered = conversation
+
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(transcript=" ", is_final=True),
+    )
+
+    assert not answered()
+
+
+async def test_what_the_user_types_is_an_answer(conversation):
+    session, answered = conversation
+
+    session.emit(
+        "conversation_item_added",
+        SimpleNamespace(item=llm.ChatMessage(role="user", content=["Yes, send it."])),
+    )
+
+    assert answered()

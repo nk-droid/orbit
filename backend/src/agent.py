@@ -342,8 +342,12 @@ def create_session(
         event.speech_handle.add_done_callback(finished)
 
     # The gate also needs to know when the user has actually said or typed
-    # something. Typed and spoken input arrive through different events, and a
-    # realtime model's transcript can lag behind the speech itself, so all three count.
+    # something. What they type comes as a message of theirs and what they say as a
+    # transcript, a piece at a time as Gemini hears it, so any piece with words counts.
+    # LiveKit's "user is speaking" state does not: with no voice activity detection
+    # of the session's own, it is also set whenever the model begins a turn by
+    # itself, as for a tool's result, so the model's own turn would pass for the
+    # user's answer (livekit-plugins-google 1.8.4).
     @session.on("conversation_item_added")
     def _on_item(event) -> None:
         who = getattr(event.item, "role", None)
@@ -354,12 +358,7 @@ def create_session(
 
     @session.on("user_input_transcribed")
     def _on_transcript(event) -> None:
-        if event.is_final:
-            gate.note_user_input()
-
-    @session.on("user_state_changed")
-    def _on_user_state(event) -> None:
-        if event.new_state == "speaking":
+        if event.transcript.strip():
             gate.note_user_input()
 
     return session
