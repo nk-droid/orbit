@@ -12,6 +12,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# What makes the demo film: the repo keeps only the film and its GIF, in docs/
+/demo-film/
+
 # OS and editors
 .DS_Store
 .idea/
