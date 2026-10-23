@@ -34,6 +34,19 @@ def said_so_far(context: RunContext) -> list[tuple[str, str]]:
     ]
 
 
+def latest_request(said: list[tuple[str, str]]) -> list[str]:
+    """What the user said since Orbit last spoke, or else the last thing they said:
+    the request a tool is being called for."""
+    latest = []
+    for who, text in reversed(said):
+        if who == "assistant":
+            break
+        latest.append(text)
+    if latest:
+        return latest
+    return next(([text] for who, text in reversed(said) if who == "user"), [])
+
+
 def said_by_the_user(context: RunContext) -> list[str]:
     """What the user has said in this conversation, as far as it is on record."""
     return [text for who, text in said_so_far(context) if who == "user"]

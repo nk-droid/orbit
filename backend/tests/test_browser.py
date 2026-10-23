@@ -17,10 +17,12 @@ from agent_tools.browser import (
     MAX_RESULT_CHARS,
     TOOLS,
     BrowserToolset,
+    asked_for_in,
     in_their_words,
     is_local,
     named,
     readable,
+    whole_address,
 )
 from agent_tools.chrome import (
     Profile,
@@ -157,6 +159,16 @@ class StubBrowser:
     def calls_in(self) -> list[tuple[str, str]]:
         """Every call the stand-in servers received, as (browser, tool)."""
         return [(call["browser"], call["tool"]) for call in self.asked()]
+
+
+@pytest.fixture(autouse=True)
+def apps_answer(monkeypatch):
+    """Whatever address on this computer a test opens, something answers there."""
+
+    async def answering(ports):
+        return list(ports)
+
+    monkeypatch.setattr(browser_tools, "answering", answering)
 
 
 @pytest.fixture
@@ -936,6 +948,232 @@ async def test_a_tab_is_never_opened_on_the_users_own_machine(browser):
         )
 
     assert browser.calls() == []
+
+
+LOCAL_APP = "### Page\n- Page URL: http://localhost:3000/\n- Page Title: My app"
+
+
+def _talk(*said: tuple[str, str]) -> SimpleNamespace:
+    """What a tool is handed in a conversation in which this was said, by "user"
+    or "assistant"."""
+    messages = [SimpleNamespace(role=who, text_content=text) for who, text in said]
+    return SimpleNamespace(
+        session=SimpleNamespace(history=SimpleNamespace(items=messages)),
+        userdata=SimpleNamespace(gate=None),
+    )
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Open http://localhost:3000 in the browser.",
+        "Open localhost 3000.",
+        "Open my app on local host 3000.",
+        "Go to localhost:3000/login please.",
+        "Open 127.0.0.1:3000.",
+    ],
+)
+async def test_an_address_on_the_users_computer_opens_when_they_ask_for_it(
+    browser, said
+):
+    browser.answers("browser_navigate", LOCAL_APP)
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    answer = await tool(browser, "browser_navigate")(
+        _conversation(said), {"url": "http://localhost:3000"}
+    )
+
+    assert "My app" in answer
+    assert browser.calls() == [("shown", "browser_navigate")]
+
+
+@pytest.mark.parametrize(
+    ("url", "said", "asks"),
+    [
+        ("http://localhost:3000/", "Open my app on port 3000.", True),
+        ("http://localhost:3000/", "Open localhost three thousand.", True),
+        ("http://localhost:3000/", "Open the app I'm running locally.", True),
+        ("http://localhost:3000/", "3000", True),
+        ("http://localhost/", "Open localhost.", True),
+        ("http://192.168.1.5:8080/", "Open my router.", True),
+        ("http://192.168.1.5/", "Open 192 dot 168 dot 1 dot 5.", True),
+        ("http://nas.local/", "Show me the NAS.", True),
+        ("http://printer.local/", "Show me the printer's page.", True),
+        ("http://localhost:3000/", "Summarize the top story on Hacker News.", False),
+        ("http://localhost:3000/", "Open my app.", False),
+    ],
+)
+def test_the_user_asks_for_something_on_their_computer(url, said, asks):
+    assert asked_for_in(url, [said]) is asks
+
+
+@pytest.mark.parametrize(
+    ("written", "whole"),
+    [
+        ("http:localhost:3000", "http://localhost:3000"),
+        ("http:/localhost:3000", "http://localhost:3000"),
+        ("localhost:3000", "http://localhost:3000"),
+        ("127.0.0.1:8080/x", "http://127.0.0.1:8080/x"),
+        ("printer.local/admin", "http://printer.local/admin"),
+        ("https://example.com/", "https://example.com/"),
+    ],
+)
+def test_an_address_written_in_part_is_made_whole(written, whole):
+    assert whole_address(written) == whole
+
+
+async def test_an_address_typed_as_the_user_typed_it_is_opened(browser):
+    # The user typed it without the slashes, and the model passed it on as it was.
+    browser.answers("browser_navigate", LOCAL_APP)
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    await tool(browser, "browser_navigate")(
+        _conversation("http:localhost:3000"), {"url": "http:localhost:3000"}
+    )
+
+    assert browser.asked()[-1]["arguments"] == {"url": "http://localhost:3000"}
+
+
+async def test_an_address_without_a_host_is_not_asked_about(browser):
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    with pytest.raises(ToolError, match="not a whole web address"):
+        await tool(browser, "browser_navigate")(
+            _conversation("Open it."), {"url": "http:///x"}
+        )
+
+
+async def test_an_address_on_the_users_computer_is_asked_about_first(
+    browser, no_waiting
+):
+    browser.answers("browser_navigate", LOCAL_APP)
+    await tool(browser, "browser_start")(None, show_browser=True)
+    navigate = tool(browser, "browser_navigate")
+    said = [("user", "Open my app in the browser.")]
+
+    with pytest.raises(ToolError, match=r"Should I open http://localhost:3000\?"):
+        await navigate(_talk(*said), {"url": "http://localhost:3000"})
+    # A yes to another question, or a no, does not open it.
+    said += [("assistant", "Do you want to see the browser?"), ("user", "Yes.")]
+    with pytest.raises(ToolError, match="Ask them in a few words whether to open it"):
+        await navigate(_talk(*said), {"url": "http://localhost:3000"})
+    said += [("assistant", "Should I open localhost 3000?"), ("user", "No.")]
+    with pytest.raises(ToolError, match="Ask them in a few words whether to open it"):
+        await navigate(_talk(*said), {"url": "http://localhost:3000"})
+    assert browser.calls() == []
+
+    said += [("assistant", "Should I open localhost 3000?"), ("user", "Yes, open it.")]
+    await navigate(_talk(*said), {"url": "http://localhost:3000"})
+    assert browser.calls() == [("shown", "browser_navigate")]
+
+
+async def test_orbits_own_app_is_never_opened_even_when_asked_for(browser):
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    with pytest.raises(ToolError, match="Orbit's own app"):
+        await tool(browser, "browser_navigate")(
+            _conversation("Open localhost 8000."),
+            {"url": "http://localhost:8000/api/mail/waiting"},
+        )
+
+    assert browser.calls() == []
+
+
+async def test_a_page_cannot_lead_to_an_address_the_user_did_not_ask_for(
+    browser, no_waiting
+):
+    # A page on the web sent the browser on to an address on the user's computer.
+    browser.answers("browser_navigate", "### Page\n- Page URL: http://localhost:4000/")
+    await tool(browser, "browser_start")(None, show_browser=True)
+    reading = _conversation("Summarize the top story on example dot com.")
+
+    with pytest.raises(ToolError, match="own computer or network"):
+        await tool(browser, "browser_navigate")(reading, {"url": "https://example.com"})
+    # Nor can what a page says have the model go there.
+    with pytest.raises(ToolError, match=r"Should I open http://localhost:4000\?"):
+        await tool(browser, "browser_navigate")(
+            reading, {"url": "http://localhost:4000"}
+        )
+
+
+async def test_only_the_users_latest_request_can_open_their_computer(
+    browser, no_waiting
+):
+    await tool(browser, "browser_start")(None, show_browser=True)
+    said = [
+        ("user", "Open localhost 3000."),
+        ("assistant", "It's open."),
+        ("user", "Now summarize the top story on Hacker News."),
+    ]
+
+    with pytest.raises(ToolError, match=r"Should I open http://localhost:9200\?"):
+        await tool(browser, "browser_navigate")(
+            _talk(*said), {"url": "http://localhost:9200/_cat/indices"}
+        )
+
+
+async def test_the_users_app_may_send_the_browser_on_to_another_of_its_addresses(
+    browser,
+):
+    browser.answers(
+        "browser_navigate", "### Page\n- Page URL: http://localhost:4000/login"
+    )
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    answer = await tool(browser, "browser_navigate")(
+        _conversation("Open my app on localhost 3000."),
+        {"url": "http://localhost:3000"},
+    )
+
+    assert "localhost:4000/login" in answer
+
+
+async def test_when_nothing_answers_the_apps_that_do_are_named(browser, monkeypatch):
+    async def answering(ports):
+        # The user's app is on 4000, and Orbit's own API on 8000.
+        return [port for port in ports if port in (4000, 8000)]
+
+    monkeypatch.setattr(browser_tools, "answering", answering)
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    with pytest.raises(ToolError, match=r"answer at: http://localhost:4000\. Open the"):
+        await tool(browser, "browser_navigate")(
+            _conversation("Open the app I'm running locally."),
+            {"url": "http://localhost:3000"},
+        )
+    assert browser.calls() == []
+
+
+async def test_when_nothing_runs_the_user_is_asked_about_their_app(
+    browser, monkeypatch
+):
+    async def answering(ports):
+        return []
+
+    monkeypatch.setattr(browser_tools, "answering", answering)
+    await tool(browser, "browser_start")(None, show_browser=True)
+
+    with pytest.raises(ToolError, match="whether their app is running"):
+        await tool(browser, "browser_navigate")(
+            _conversation("Open my app on port 3000."), {"url": "http://localhost:3000"}
+        )
+
+
+async def test_an_address_the_user_asked_for_stays_open_to_the_browser(browser):
+    browser.answers("browser_navigate", LOCAL_APP)
+    await tool(browser, "browser_start")(None, show_browser=False)
+    await tool(browser, "browser_navigate")(
+        _conversation("Open localhost 3000."), {"url": "http://localhost:3000"}
+    )
+
+    # Later steps need not name it again, and it is opened again when shown.
+    await tool(browser, "browser_navigate")(
+        None, {"url": "http://localhost:3000/settings"}
+    )
+    shown = await tool(browser, "browser_start")(None, show_browser=True)
+
+    assert shown["pages_reopened"] == 1
+    assert browser.asked()[-1]["arguments"] == {"url": "http://localhost:3000/settings"}
 
 
 async def test_asked_for_another_one_a_second_browser_opens_beside_the_first(browser):
