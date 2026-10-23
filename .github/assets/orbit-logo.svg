@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Orbit">
+  <rect width="512" height="512" rx="112" fill="#04070c"/>
+  <g transform="translate(112 112) scale(9)" fill="none">
+    <circle cx="16" cy="16" r="4.5" fill="#5fdcff"/>
+    <ellipse cx="16" cy="16" rx="13" ry="6" transform="rotate(-28 16 16)" stroke="#5fdcff" stroke-width="1.4"/>
+    <circle cx="27.5" cy="9.9" r="2" fill="#ffb454"/>
+  </g>
+</svg>
