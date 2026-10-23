@@ -16,6 +16,7 @@ from reminders.store import Reminder
 from reminders.when import WhenError, in_words, resolve
 
 from . import stage
+from .state import note_change
 
 MAX_TITLE_CHARS = 200
 # The app keeps this card up to date from the store itself.
@@ -86,6 +87,7 @@ async def reminder_add(
     reminder = store.add(
         _title(title), _due(day, time, in_minutes, now), note.strip() or None
     )
+    note_change(context)
     await stage.show(REMINDERS_CARD)
     return {"saved": _facts(reminder, now)}
 
@@ -144,6 +146,7 @@ async def reminder_change(
     reminder = store.change(reminder_id, title=new_title, due_at=new_due)
     if reminder is None:
         raise ToolError(NOT_FOUND)
+    note_change(context)
     await stage.show(REMINDERS_CARD)
     return {"saved": _facts(reminder, now)}
 
@@ -158,6 +161,7 @@ async def reminder_done(context: RunContext, reminder_id: str) -> dict[str, Any]
     reminder = store.set_status(reminder_id, "done", only_from="open")
     if reminder is None:
         raise ToolError(NOT_FOUND)
+    note_change(context)
     await stage.show(REMINDERS_CARD)
     return {"done": _facts(reminder, _now())}
 
@@ -173,6 +177,7 @@ async def reminder_cancel(context: RunContext, reminder_id: str) -> dict[str, An
     reminder = store.set_status(reminder_id, "cancelled", only_from="open")
     if reminder is None:
         raise ToolError(NOT_FOUND)
+    note_change(context)
     await stage.show(REMINDERS_CARD)
     return {"cancelled": _facts(reminder, _now())}
 

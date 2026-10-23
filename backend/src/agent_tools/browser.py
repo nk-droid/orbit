@@ -63,6 +63,7 @@ from . import stage, workflows
 from .chrome import CLEAN, Chrome, Profile, ProfileError, ProfilesBlockedError
 from .heard import latest_request, said_so_far
 from .heard import said_by_the_user as _said_by_the_user
+from .state import note_change
 
 logger = logging.getLogger("orbit.browser")
 
@@ -90,6 +91,10 @@ CODE_TOOLS = (
     "browser_fill_form",
     "browser_file_upload",
     "browser_take_screenshot",
+)
+# The model's browser tools that change a page rather than read it.
+_CHANGING = frozenset(
+    {"browser_click", "browser_type", "browser_press_key", "browser_select_option"}
 )
 _DEFINITIONS = Path(__file__).with_name("browser_tools.json")
 
@@ -988,6 +993,10 @@ class BrowserToolset(Toolset):
             answer = text
         else:
             answer = await asyncio.to_thread(readable, text, self._local)
+        if not own and name in _CHANGING:
+            # Counted before a task done for every item of a list takes the model's
+            # word that an item is done (lists.py).
+            note_change(context)
         if not own and human_checks.asks(text):
             answer += PERSON_CHECK
         opened = bool(arguments.get("url")) and name in (

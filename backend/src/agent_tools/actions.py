@@ -31,7 +31,7 @@ from reminders.when import WhenError, in_words, resolve
 from . import attaching, stage
 from .google import reading
 from .heard import said_so_far
-from .state import OrbitState
+from .state import OrbitState, note_change
 from .workflows import trace_of
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -1180,6 +1180,7 @@ async def confirm_action(
         ) from e
 
     gate.complete(action.id, result)
+    note_change(context)
     done = {"status": "done", "action": _told(action.preview)}
     if handler is not None:
         done.update(result.get("told") or {})
@@ -1261,6 +1262,7 @@ async def save_to_gmail_drafts(
     account = (tokens.load() or {}).get("account", "")
     link = gmail.draft_link(saved.get("message_id") or "", account)
     gate.set_aside(action.id, {**saved, "gmail_draft": link})
+    note_change(context)
     return {"status": "saved in Gmail drafts, not sent", "next": IN_GMAIL}
 
 

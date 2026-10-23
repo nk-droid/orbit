@@ -58,3 +58,15 @@ class OrbitState:
     handlers: dict[str, Callable[[Any, Action], Awaitable[dict[str, Any]]]] = field(
         default_factory=dict
     )
+    # How many times something was changed or sent in this conversation: a click or
+    # typing in the browser, an approved action carried out, a reminder set or
+    # changed. A task done for every item of a list looks here before it takes the
+    # model's word that an item is done.
+    changed: int = 0
+
+
+def note_change(context: Any) -> None:
+    """Counts one change made in the conversation: see OrbitState.changed."""
+    state = getattr(context, "userdata", None)
+    if isinstance(state, OrbitState):
+        state.changed += 1
