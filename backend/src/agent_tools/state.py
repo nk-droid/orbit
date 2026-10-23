@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 from actions.gate import ActionGate
 
+from .workflows import Trace
+
 
 @dataclass
 class OrbitState:
@@ -38,3 +40,6 @@ class OrbitState:
     # user whether to take one. None if it has not been, or they have answered.
     looked_up_to: int = 0
     asked_about_screen: int | None = None
+    # What was done in the browser, and where the user was offered to have a task
+    # remembered as a workflow.
+    trace: Trace = field(default_factory=Trace)

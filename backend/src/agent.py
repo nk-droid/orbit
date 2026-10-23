@@ -34,6 +34,7 @@ from agent_tools.stage import STAGE_TOOLS
 from agent_tools.standby import standby_tool
 from agent_tools.state import OrbitState
 from agent_tools.web import WEB_TOOLS
+from agent_tools.workflows import WorkflowToolset
 
 logger = logging.getLogger("agent")
 
@@ -87,17 +88,23 @@ class Assistant(Agent):
         browser: BrowserToolset | None = None,
         earlier: list[tuple[str, str]] | None = None,
         earlier_cut: bool = False,
+        workflows: WorkflowToolset | None = None,
     ) -> None:
         """`memory` holds Mem0's tools and `memory_note` tells the model what it
         already remembers; both come from connect_memory(). `browser` is the web
         browser, if this conversation has one. Its rules say whether an earlier
         conversation left it open, so call its resume() first. `earlier` is what was
         said before in this session of the app, and `earlier_cut` says its beginning
-        was left out; both come from session_memory."""
+        was left out; both come from session_memory. `workflows` holds the tasks the
+        user asked Orbit to remember, done again in `browser` when they are tasks in
+        the browser; it is made here if not given."""
         earlier = earlier or []
+        workflows = workflows or WorkflowToolset(browser)
+        saved = workflows.rules
         # Indented like the text around them, so the instructions dedent as one block.
         memory_note = (
             memory_note
+            + ("\n\n" + saved if saved else "")
             + ("\n\n" + earlier_note(earlier, earlier_cut) if earlier else "")
         ).replace("\n", "\n" + " " * 16)
         browser_note = (browser.rules if browser else NO_BROWSER).replace(
@@ -128,6 +135,7 @@ class Assistant(Agent):
                 *standby_tool().tools,
                 *([memory] if memory else []),
                 *([browser] if browser else []),
+                workflows,
             ],
             instructions=textwrap.dedent(
                 f"""\

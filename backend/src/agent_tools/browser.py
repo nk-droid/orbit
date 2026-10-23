@@ -30,6 +30,9 @@ at localhost:3000, is opened only when the user asks for that address themselves
 their own words name it, or they say yes when asked. What a page says cannot open
 one. Orbit's own app, which holds the user's mail, is never opened.
 
+A task done in the browser can be remembered as a workflow, and done again in one
+step, in a browser started the way it was then (workflows.py).
+
 The tool definitions in browser_tools.json were taken from the pinned version of
 the server below; `python -m agent_tools.browser` writes them again after a bump.
 See https://github.com/microsoft/playwright-mcp and
@@ -53,7 +56,7 @@ from urllib.parse import urlparse
 from livekit.agents import RunContext, function_tool, mcp
 from livekit.agents.llm import ToolError, Toolset
 
-from . import stage
+from . import stage, workflows
 from .chrome import CLEAN, Chrome, Profile, ProfileError, ProfilesBlockedError
 from .heard import latest_request, said_so_far
 from .heard import said_by_the_user as _said_by_the_user
@@ -759,10 +762,26 @@ class BrowserToolset(Toolset):
         text = _text(await tools[name](arguments))
         self._allow_where_sent(context, text)
         answer = readable(text, self._local)
-        if arguments.get("url") and name in ("browser_navigate", "browser_tabs"):
+        opened = bool(arguments.get("url")) and name in (
+            "browser_navigate",
+            "browser_tabs",
+        )
+        if opened:
             self._chrome.note_page(target, arguments["url"])
         self._current = target
         await stage.show(self._card(target), push={"steps": _step(name, arguments)})
+        # What was done, for remembering the task as a workflow.
+        if (trace := workflows.trace_of(context)) is not None:
+            pages = _PAGE_URL.findall(text)
+            browser = self._open[target]
+            trace.note(
+                name,
+                pages[-1] if pages else str(arguments.get("url") or ""),
+                opened,
+                browser.shown,
+                browser.profile.name if browser.profile else None,
+            )
+            answer += trace.offer(said_so_far(context))
         # With several open, the model is told which one answered.
         if len(self._open) > 1:
             return f"[In the {target} browser]\n{answer}"
@@ -975,6 +994,47 @@ class BrowserToolset(Toolset):
                 listed.append(about)
         return {"browsers": listed, "count": len(listed)}
 
+    async def open_saved(
+        self, context: Any, url: str, shown: bool, profile: str | None
+    ) -> tuple[str, str]:
+        """Opens the first page of a workflow, in a browser of the kind it was saved
+        with, and returns the browser's name and the page.
+
+        An open browser of that kind is used, or one is started, shown or hidden as
+        it was then: the user was not asked again. What a browser in use is
+        playing goes on, unless the page is on the same site: playing another
+        song is meant to stop the one playing.
+        """
+        if is_local(url):
+            if is_orbits_own(url) or urlparse(url).scheme not in ("http", "https"):
+                raise ToolError(ORBITS_OWN if is_orbits_own(url) else LOCAL_PAGE)
+            # A workflow begins only where the user had the browser go, so an
+            # address on their own computer is one they asked for when it was saved.
+            self._local.add(origin_of(url))
+        wanted = await self._wanted(profile or CLEAN, another=False)
+        async with self._starting:
+            await self._forget_closed()
+            target = self._of_kind(wanted, shown)
+            started = target is None
+            if target is None:
+                target = await self._open_one(shown, wanted)
+            self._current = target
+            self._again = (shown, wanted)
+        # Saving the workflow answered whether the user wants to see the browser.
+        self._wish_known = True
+        if started:
+            await stage.show({**self._card(target), "steps": []})
+        running = None if started else await self._running(target)
+        if (
+            running
+            and running.url
+            and workflows.site(running.url) != workflows.site(url)
+        ):
+            tool, arguments = "browser_tabs", {"action": "new", "url": url}
+        else:
+            tool, arguments = "browser_navigate", {"url": url}
+        return target, await self._forward(context, tool, arguments, target)
+
     async def _wanted(self, asked: str, another: bool) -> Profile | None:
         """The profile to have a browser on, None for a clean one. Saying nothing
         keeps the kind in use, or for one more browser means a clean one."""
@@ -992,9 +1052,16 @@ class BrowserToolset(Toolset):
             return self._open[self._current].profile
         return self._again[1] if self._again else None
 
-    def _of_kind(self, profile: Profile | None) -> str | None:
-        """An open browser on that profile, the one used last if it is one."""
-        of_kind = [name for name, b in self._open.items() if b.profile == profile]
+    def _of_kind(
+        self, profile: Profile | None, shown: bool | None = None
+    ) -> str | None:
+        """An open browser on that profile, shown or hidden as asked if that is
+        given: the one used last if it is one."""
+        of_kind = [
+            name
+            for name, b in self._open.items()
+            if b.profile == profile and shown in (None, b.shown)
+        ]
         if self._current in of_kind:
             return self._current
         return of_kind[0] if of_kind else None

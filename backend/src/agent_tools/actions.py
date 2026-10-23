@@ -25,7 +25,9 @@ from reminders.when import WhenError, in_words, resolve
 
 from . import attaching, stage
 from .google import reading
+from .heard import said_so_far
 from .state import OrbitState
+from .workflows import trace_of
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MAX_EVENT_MINUTES = 12 * 60
@@ -1042,6 +1044,12 @@ async def confirm_action(
 
     gate.complete(action.id, result)
     done = {"status": "done", "action": _told(action.preview)}
+    # A task done for something the user calls theirs may be done again.
+    trace = trace_of(context)
+    if trace is not None and (
+        offer := trace.offer_after(action.kind, said_so_far(context))
+    ):
+        done["then"] = offer
     if action.kind.startswith("sheets."):
         await _show_changed_sheet(action, result)
         if spreadsheet_id := result.get("spreadsheet_id"):
