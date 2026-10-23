@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .actions import router as actions_router
 from .attachments import router as attachments_router
+from .charts import router as charts_router
 from .deck import router as deck_router
 from .files import router as files_router
 from .integrations import router as integrations_router
@@ -29,6 +30,7 @@ app.include_router(actions_router, prefix="/api")
 app.include_router(mail_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(sheets_router, prefix="/api")
+app.include_router(charts_router, prefix="/api")
 app.include_router(attachments_router, prefix="/api")
 app.include_router(reminders_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
