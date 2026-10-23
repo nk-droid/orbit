@@ -61,6 +61,9 @@ the conversation.
   remember preferences across sessions using Mem0.
 - 🔁 **Workflows:** save a task as a workflow after doing it once, then repeat it in one step
   with what you ask for that time.
+- 🔂 **Whole lists in one go:** ask for something to be done for every item of a list, such as
+  accepting all your invitations, and Orbit gathers every item, asks once, and works through
+  all of them, checking each one.
 - 💼 **Job applications:** build a profile from your résumé and your own pages, search
   companies' job boards, Google, LinkedIn and Cutshort in your browser, review the jobs
   found in a Google Sheet, and apply to one job at a time. Orbit drafts and checks each
@@ -384,6 +387,28 @@ With `ORBIT_DRY_RUN` set, everything is done except the click on Submit.
 > your own signed-in profile: it reads one page at a time and applies only with your
 > approval, but the risk to your account is yours to weigh.
 
+### Whole lists
+
+Ask Orbit to do something for every item of a list, such as accepting all your collaborator
+invitations, deleting each old reminder, or replying to each of these emails. Orbit gathers
+every item first: from the conversation, or from a list in the browser, which it reads
+through every page by its Next links, and as far as each page loads when scrolled. You see
+the items and say yes once. Orbit then works through them one at a time, with a card showing
+each item and what came of it, while you carry on talking. When the voice model pauses
+between items, Orbit has it carry on by itself; when you say stop or wait, the list stops at
+once.
+
+An item counts as done only when something was changed for it, such as a click in the
+browser or an approved action, and only Orbit's own count says the list is finished. Five
+failures in a row pause the list. A list cut short, by you, by failures or by a dropped
+session, can be carried on later from the next item. One list takes up to 500 items; more
+are reported, never dropped silently.
+
+Your yes to the list also covers the Google actions that do only what the task says, such as
+answering an invitation or changing a sheet's rows. New writing, such as a reply to each
+email, is kept and shown all together once every item is done, and sent after one more yes.
+A draft that carries files still asks on its own.
+
 ### Memory
 
 - **Long-term memory:** set `MEM0_API_KEY` in `backend/.env.local`. Orbit uses Mem0's hosted
@@ -476,6 +501,7 @@ permission. Pressing the orb remains available when local recognition is unsuppo
 | `backend/src/actions/` | Draft storage, approval gate, and action execution |
 | `backend/src/charts/` | Chart data sources, the numbers each chart draws, and saving to Sheets |
 | `backend/src/jobs/` | Job profile, searches, Orbit jobs, application forms and their checks |
+| `backend/src/lists/` | Lists of items one task is done for, and how far each has got |
 | `backend/src/drafting/` | Email triage and suggested replies |
 | `backend/tests/` | Unit tests and model integration tests |
 | `frontend/src/voice/` | LiveKit connection, microphone, and wake word |
@@ -501,9 +527,9 @@ LiveKit. See the [frontend README](frontend/README.md) for UI structure and buil
   Google's APIs; voice transport uses LiveKit. Long-term memories are stored in Mem0,
   and the default email drafting models use Ollama's cloud. For job applications, the
   drafting model is also given your résumé, profile and the postings Orbit reads.
-- **Local storage:** reminders, saved workflows, saved charts, action history, reply
-  drafts, and your job profile, résumé, jobs and applications live under
-  `backend/.data/`.
+- **Local storage:** reminders, saved workflows, saved charts, lists being worked through,
+  action history, reply drafts, and your job profile, résumé, jobs and applications live
+  under `backend/.data/`.
   Attachment copies are stored temporarily there. Session transcripts live in Redis and
   may also be written to disk if Redis persistence is enabled. Environment files,
   `.secrets/`, and `.data/` are ignored by Git.
